@@ -17,6 +17,37 @@ const SurveyCreatorWidget = () => {
 
         newCreator.saveSurveyFunc = async (saveNo, callback) => {
             try {
+                // Auto-rename generic questions (question1, etc.) to meaningful names based on Title
+                // This ensures analytics/storage uses readable keys
+                const survey = newCreator.survey;
+                const pages = survey.pages;
+
+                // Helper to slugify text
+                const slugify = (text) => {
+                    return text.toString().toLowerCase()
+                        .replace(/\s+/g, '-')           // Replace spaces with -
+                        .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
+                        .replace(/\-\-+/g, '-')         // Replace multiple - with single -
+                        .replace(/^-+/, '')             // Trim - from start
+                        .replace(/-+$/, '');            // Trim - from end
+                };
+
+                pages.forEach(page => {
+                    page.elements.forEach(el => {
+                        // Check if name is generic (starts with question + number) OR just ensure we match title if possible
+                        // We strictly want "indexed on question name", so let's force name = slug(title) if title is set
+                        if (el.title && el.name.match(/^question\d+$/)) {
+                            const newName = slugify(el.title);
+                            if (newName && newName !== el.name) {
+                                // check if name exists
+                                if (!survey.getQuestionByName(newName)) {
+                                    el.name = newName;
+                                }
+                            }
+                        }
+                    });
+                });
+
                 const surveyJson = newCreator.JSON;
                 const payload = {
                     title: surveyJson.title || 'Untitled Survey',
@@ -25,7 +56,7 @@ const SurveyCreatorWidget = () => {
 
                 await api.post('/surveys', payload);
                 callback(saveNo, true);
-                alert('Survey Saved!');
+                alert('Survey Saved! responses will now use meaningful names.');
                 navigate('/dashboard');
             } catch (err) {
                 console.error(err);
@@ -61,7 +92,7 @@ const SurveyCreatorWidget = () => {
                 </div>
             </nav>
             <div className="flex-1 relative h-screen">
-                <SurveyCreatorComponent creator={creator}  />
+                <SurveyCreatorComponent creator={creator} />
             </div>
         </div>
     );

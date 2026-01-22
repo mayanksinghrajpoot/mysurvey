@@ -60,14 +60,26 @@ public class SurveyService {
                 .orElseThrow(() -> new RuntimeException("Survey not found"));
     }
 
-    public SurveyResponse submitResponse(String surveyId, Map<String, Object> answers) {
+    public SurveyResponse submitResponse(String surveyId, Map<String, Object> payload) {
         Survey survey = surveyRepository.findById(surveyId)
                 .orElseThrow(() -> new RuntimeException("Survey not found"));
 
         SurveyResponse response = new SurveyResponse();
         response.setSurveyId(surveyId);
-        response.setTenantId(survey.getTenantId()); // Associate response with survey's tenant
-        response.setAnswers(answers);
+        response.setTenantId(survey.getTenantId());
+
+        // Set Version to match survey
+        response.setSurveyVersion(survey.getVersion());
+
+        // Extract Answers and Metadata
+        if (payload.containsKey("answers")) {
+            response.setAnswers((Map<String, Object>) payload.get("answers"));
+        }
+        if (payload.containsKey("metadata")) {
+            response.setMetadata((Map<String, Object>) payload.get("metadata"));
+        }
+
+        response.setStatus(com.form.forms.model.ResponseStatus.COMPLETED);
         response.setSubmittedAt(new Date());
 
         return responseRepository.save(response);

@@ -151,6 +151,7 @@ const AdminDashboard = () => {
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         <Link to={`/surveys/${survey.id}/responses`} className="text-blue-600 hover:text-blue-900 mr-4">View Responses</Link>
+                                        <Link to={`/surveys/${survey.id}/analytics`} className="text-purple-600 hover:text-purple-900 mr-4">Analytics</Link>
                                         <Link to={`/survey/${survey.id}`} className="text-green-600 hover:text-green-900">View Form</Link>
                                         {/* Admin specific actions like Delete could go here */}
                                     </td>

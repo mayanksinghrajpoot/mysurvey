@@ -18,9 +18,36 @@ const SurveyRunner = () => {
                 const model = new Model(surveyData.surveyJson);
                 model.onComplete.add(async (sender) => {
                     const results = sender.data;
+
+                    // TRANSFORM RESULTS: Store Text instead of Value for Choices
+                    // Iterate over keys in results
+                    const transformedResults = { ...results };
+                    Object.keys(results).forEach(key => {
+                        const question = model.getQuestionByName(key);
+                        if (question) {
+                            if (question.displayValue) {
+                                // SurveyJS 'displayValue' gives the readable text
+                                transformedResults[key] = question.displayValue;
+                            }
+                        }
+                    });
+
+
+
+                    // Collect Metadata
+                    const metadata = {
+                        userAgent: navigator.userAgent,
+                        screenResolution: `${window.screen.width}x${window.screen.height}`,
+                        language: navigator.language,
+                        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                        completedAt: new Date().toISOString()
+                    };
+
                     try {
-                        await api.post(`/surveys/submit/${id}`, { answers: results });
-                        // SurveyJS handles "Thank you" page automatically
+                        await api.post(`/surveys/submit/${id}`, {
+                            answers: transformedResults,
+                            metadata: metadata
+                        });
                     } catch (err) {
                         alert('Failed to submit survey');
                     }

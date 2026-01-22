@@ -111,6 +111,14 @@ const Dashboard = () => {
                                             Take Survey
                                         </Link>
                                     </div>
+                                    <div className="mt-3">
+                                        <Link
+                                            to={`/surveys/${s.id}/analytics`}
+                                            className="block w-full text-center px-4 py-2 border border-slate-300 shadow-sm text-sm font-medium rounded-lg text-purple-700 bg-white hover:bg-purple-50 transition"
+                                        >
+                                            View Analytics
+                                        </Link>
+                                    </div>
                                 </div>
                             </div>
                         ))}

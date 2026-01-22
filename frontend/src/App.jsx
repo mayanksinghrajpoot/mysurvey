@@ -6,6 +6,7 @@ import SurveyCreatorWidget from './components/SurveyCreatorWidget';
 import AdminDashboard from './components/AdminDashboard';
 import SurveyRunner from './components/SurveyRunner';
 import SurveyResponses from './components/SurveyResponses';
+import AnalyticsDashboard from './components/AnalyticsDashboard';
 
 const ProtectedRoute = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -28,6 +29,9 @@ function App() {
         } />
         <Route path="/admin-dashboard" element={
           <ProtectedRoute><AdminDashboard /></ProtectedRoute>
+        } />
+        <Route path="/surveys/:id/analytics" element={
+          <ProtectedRoute><AnalyticsDashboard /></ProtectedRoute>
         } />
         <Route path="/survey/:id" element={<SurveyRunner />} /> {/* Public access */}
         <Route path="*" element={<Navigate to="/login" />} />
