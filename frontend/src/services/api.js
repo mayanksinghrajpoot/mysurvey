@@ -9,18 +9,14 @@ const api = axios.create({
 api.interceptors.request.use(
     (config) => {
         const token = localStorage.getItem('token');
-        const tenantId = localStorage.getItem('tenantId'); // Or parse from token, but header is good validation
+        const organizationId = localStorage.getItem('organizationId');
 
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
 
-        // In a real multi-tenant app, tenant might be inferred from subdomain (e.g., ngo1.app.com)
-        // For this demo, we store it manually or let the user "select" it (login context)
-        // We will extract it from the JWT in backend mostly, but sending it in header helps filter before parsing token
-        // We will extract it from the JWT in backend mostly, but sending it in header helps filter before parsing token
-        if (tenantId && config.headers['X-TENANT-ID'] === undefined) {
-            config.headers['X-TENANT-ID'] = tenantId;
+        if (organizationId && config.headers['X-ORGANIZATION-ID'] === undefined) {
+            config.headers['X-ORGANIZATION-ID'] = organizationId;
         }
 
         return config;

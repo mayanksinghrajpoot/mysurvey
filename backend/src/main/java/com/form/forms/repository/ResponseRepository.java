@@ -8,7 +8,11 @@ import java.util.List;
 public interface ResponseRepository extends MongoRepository<SurveyResponse, String> {
     List<SurveyResponse> findBySurveyId(String surveyId);
 
-    List<SurveyResponse> findByTenantId(String tenantId);
+    List<SurveyResponse> findByOrganizationId(String organizationId);
 
     long countBySurveyId(String surveyId);
+
+    List<SurveyResponse> findBySurveyIdAndRespondentId(String surveyId, String respondentId);
+
+    List<SurveyResponse> findByOrganizationIdAndRespondentId(String organizationId, String respondentId);
 }

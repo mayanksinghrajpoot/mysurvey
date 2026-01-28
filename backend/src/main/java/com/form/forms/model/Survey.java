@@ -13,7 +13,10 @@ public class Survey {
     private String id;
 
     @Indexed
-    private String tenantId;
+    private String organizationId; // Points to the Corporate Admin
+
+    @Indexed
+    private String projectId; // Link to Project
 
     @Indexed(unique = true)
     private String slug; // Friendly URL part
@@ -23,12 +26,18 @@ public class Survey {
 
     private Map<String, Object> surveyJson;
 
+    // Mapping of Long Question Name -> Short Key
+    private Map<String, String> minifiedKeys;
+
     private SurveyStatus status = SurveyStatus.DRAFT;
     private Integer version = 1;
 
-    private String createdBy;
+    private String createdBy; // ID of the Project Manager who created it
     private Date createdAt = new Date();
     private Date updatedAt;
+
+    // RBAC: list of NGOs assigned to this survey
+    private java.util.List<String> assignedNgoIds;
 
     // Getters and Setters
 
@@ -40,12 +49,20 @@ public class Survey {
         this.id = id;
     }
 
-    public String getTenantId() {
-        return tenantId;
+    public String getOrganizationId() {
+        return organizationId;
     }
 
-    public void setTenantId(String tenantId) {
-        this.tenantId = tenantId;
+    public void setOrganizationId(String organizationId) {
+        this.organizationId = organizationId;
+    }
+
+    public String getProjectId() {
+        return projectId;
+    }
+
+    public void setProjectId(String projectId) {
+        this.projectId = projectId;
     }
 
     public String getSlug() {
@@ -78,6 +95,14 @@ public class Survey {
 
     public void setSurveyJson(Map<String, Object> surveyJson) {
         this.surveyJson = surveyJson;
+    }
+
+    public Map<String, String> getMinifiedKeys() {
+        return minifiedKeys;
+    }
+
+    public void setMinifiedKeys(Map<String, String> minifiedKeys) {
+        this.minifiedKeys = minifiedKeys;
     }
 
     public SurveyStatus getStatus() {
@@ -118,5 +143,13 @@ public class Survey {
 
     public void setUpdatedAt(Date updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public java.util.List<String> getAssignedNgoIds() {
+        return assignedNgoIds;
+    }
+
+    public void setAssignedNgoIds(java.util.List<String> assignedNgoIds) {
+        this.assignedNgoIds = assignedNgoIds;
     }
 }

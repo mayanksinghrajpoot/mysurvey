@@ -23,15 +23,17 @@ public class JwtTokenProvider {
         return Keys.hmacShaKeyFor(jwtSecret.getBytes());
     }
 
-    public String generateToken(Authentication authentication, String tenantId, String role) {
+    public String generateToken(Authentication authentication, String userId, com.form.forms.model.Role role,
+            String organizationId) {
         String username = authentication.getName();
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + jwtExpirationInMs);
 
         return Jwts.builder()
                 .setSubject(username)
-                .claim("tenantId", tenantId)
-                .claim("role", role)
+                .claim("userId", userId) // Replaces tenantId
+                .claim("role", role.name())
+                .claim("organizationId", organizationId)
                 .setIssuedAt(new Date())
                 .setExpiration(expiryDate)
                 .signWith(getSigningKey(), SignatureAlgorithm.HS512)
@@ -48,13 +50,13 @@ public class JwtTokenProvider {
         return claims.getSubject();
     }
 
-    public String getTenantIdFromJWT(String token) {
+    public String getOrganizationIdFromJWT(String token) {
         Claims claims = Jwts.parserBuilder()
                 .setSigningKey(getSigningKey())
                 .build()
                 .parseClaimsJws(token)
                 .getBody();
-        return (String) claims.get("tenantId");
+        return (String) claims.get("organizationId");
     }
 
     public String getRoleFromJWT(String token) {

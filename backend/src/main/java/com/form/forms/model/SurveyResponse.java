@@ -10,16 +10,20 @@ import java.util.Map;
 
 @Document(collection = "responses")
 @CompoundIndexes({
-        @CompoundIndex(name = "tenant_survey_idx", def = "{'tenantId' : 1, 'surveyId' : 1, 'submittedAt' : -1}")
+        @CompoundIndex(name = "org_survey_idx", def = "{'organizationId' : 1, 'surveyId' : 1, 'submittedAt' : -1}"),
+        @CompoundIndex(name = "answers_wildcard_idx", def = "{'answers.$**' : 1}")
 })
 public class SurveyResponse {
     @Id
     private String id;
-    private String tenantId;
+    private String organizationId; // Renamed from tenantId
     private String surveyId;
     private Integer surveyVersion;
 
-    // Default to COMPLETED for now, but good to have the enum field
+    // Who submitted this response (usually an NGO)
+    private String respondentId;
+
+    // Default to COMPLETED for now
     private com.form.forms.model.ResponseStatus status = com.form.forms.model.ResponseStatus.COMPLETED;
 
     private Map<String, Object> answers;
@@ -36,12 +40,12 @@ public class SurveyResponse {
         this.id = id;
     }
 
-    public String getTenantId() {
-        return tenantId;
+    public String getOrganizationId() {
+        return organizationId;
     }
 
-    public void setTenantId(String tenantId) {
-        this.tenantId = tenantId;
+    public void setOrganizationId(String organizationId) {
+        this.organizationId = organizationId;
     }
 
     public String getSurveyId() {
@@ -58,6 +62,14 @@ public class SurveyResponse {
 
     public void setSurveyVersion(Integer surveyVersion) {
         this.surveyVersion = surveyVersion;
+    }
+
+    public String getRespondentId() {
+        return respondentId;
+    }
+
+    public void setRespondentId(String respondentId) {
+        this.respondentId = respondentId;
     }
 
     public com.form.forms.model.ResponseStatus getStatus() {

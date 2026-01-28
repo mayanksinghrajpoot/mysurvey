@@ -1,6 +1,6 @@
 package com.form.forms.service;
 
-import com.form.forms.tenant.TenantContext;
+import com.form.forms.tenant.OrganizationContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.MongoTemplate;
 import org.springframework.data.mongodb.core.aggregation.Aggregation;
@@ -17,23 +17,31 @@ public class AnalyticsService {
     @Autowired
     private MongoTemplate mongoTemplate;
 
-    public List<Map> getQuestionCounts(String surveyId, String questionKey) {
-        String tenantId = TenantContext.getTenantId();
+    @Autowired
+    private com.form.forms.repository.SurveyRepository surveyRepository;
 
-        // Match specific survey and tenant (Isolation)
-        // Match specific survey and tenant (Isolation)
+    public List<Map> getQuestionCounts(String surveyId, String questionKey) {
+        String organizationId = OrganizationContext.getOrganizationId();
+
+        // 1. Resolve Key (Minified vs Original)
+        com.form.forms.model.Survey survey = surveyRepository.findById(surveyId).orElse(null);
+        String dbKey = questionKey;
+
+        if (survey != null && survey.getMinifiedKeys() != null && survey.getMinifiedKeys().containsKey(questionKey)) {
+            dbKey = survey.getMinifiedKeys().get(questionKey);
+        }
+
+        // Match specific survey and organization (Isolation)
         Criteria criteria = Criteria.where("surveyId").is(surveyId)
                 .and("status").is(com.form.forms.model.ResponseStatus.COMPLETED); // Only count VALID completions
 
-        if (tenantId != null) {
-            criteria.and("tenantId").is(tenantId);
+        if (organizationId != null) {
+            criteria.and("organizationId").is(organizationId);
         }
 
         Aggregation aggregation = Aggregation.newAggregation(
                 Aggregation.match(criteria),
-                // Group by the answer value for the specific question
-                // "answers" is the Map, so we access dot notation: answers.questionKey
-                Aggregation.group("answers." + questionKey).count().as("count"),
+                Aggregation.group("answers." + dbKey).count().as("count"),
                 Aggregation.project("count").and("_id").as("label"));
 
         AggregationResults<Map> results = mongoTemplate.aggregate(aggregation, "responses", Map.class);
@@ -41,13 +49,13 @@ public class AnalyticsService {
     }
 
     public List<Map> getTimeSeriesStats(String surveyId) {
-        String tenantId = TenantContext.getTenantId();
+        String organizationId = OrganizationContext.getOrganizationId();
 
         Criteria criteria = Criteria.where("surveyId").is(surveyId)
                 .and("status").is(com.form.forms.model.ResponseStatus.COMPLETED);
 
-        if (tenantId != null) {
-            criteria.and("tenantId").is(tenantId);
+        if (organizationId != null) {
+            criteria.and("organizationId").is(organizationId);
         }
 
         Aggregation aggregation = Aggregation.newAggregation(

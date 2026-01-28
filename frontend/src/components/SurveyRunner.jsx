@@ -2,11 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { Model } from 'survey-core';
 import { Survey } from 'survey-react-ui';
 import 'survey-core/survey-core.min.css';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 
 const SurveyRunner = () => {
     const { id } = useParams();
+    const [searchParams] = useSearchParams();
     const [surveyModel, setSurveyModel] = useState(null);
 
     useEffect(() => {
@@ -20,19 +21,15 @@ const SurveyRunner = () => {
                     const results = sender.data;
 
                     // TRANSFORM RESULTS: Store Text instead of Value for Choices
-                    // Iterate over keys in results
                     const transformedResults = { ...results };
                     Object.keys(results).forEach(key => {
                         const question = model.getQuestionByName(key);
                         if (question) {
                             if (question.displayValue) {
-                                // SurveyJS 'displayValue' gives the readable text
                                 transformedResults[key] = question.displayValue;
                             }
                         }
                     });
-
-
 
                     // Collect Metadata
                     const metadata = {
@@ -43,13 +40,22 @@ const SurveyRunner = () => {
                         completedAt: new Date().toISOString()
                     };
 
+                    const payload = {
+                        answers: transformedResults,
+                        metadata: metadata
+                    };
+
+                    // Check for Referral param
+                    const ref = searchParams.get('ref');
+                    if (ref) {
+                        payload.respondentId = ref;
+                    }
+
                     try {
-                        await api.post(`/surveys/submit/${id}`, {
-                            answers: transformedResults,
-                            metadata: metadata
-                        });
+                        await api.post(`/surveys/submit/${id}`, payload);
                     } catch (err) {
                         alert('Failed to submit survey');
+                        console.error(err);
                     }
                 });
                 setSurveyModel(model);
@@ -58,7 +64,7 @@ const SurveyRunner = () => {
             }
         };
         loadSurvey();
-    }, [id]);
+    }, [id, searchParams]);
 
     if (!surveyModel) return (
         <div className="min-h-screen flex items-center justify-center bg-slate-50">

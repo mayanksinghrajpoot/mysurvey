@@ -3,10 +3,15 @@ import { SurveyCreatorComponent, SurveyCreator } from 'survey-creator-react';
 import 'survey-core/survey-core.min.css';
 import 'survey-creator-core/survey-creator-core.min.css';
 import api from '../services/api';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 
 const SurveyCreatorWidget = () => {
     const navigate = useNavigate();
+    const location = useLocation();
+    const [searchParams] = useSearchParams();
+
+    // Get Project ID from State or URL
+    const projectId = location.state?.projectId || searchParams.get('projectId');
 
     const creator = React.useMemo(() => {
         const options = {
@@ -17,29 +22,25 @@ const SurveyCreatorWidget = () => {
 
         newCreator.saveSurveyFunc = async (saveNo, callback) => {
             try {
-                // Auto-rename generic questions (question1, etc.) to meaningful names based on Title
-                // This ensures analytics/storage uses readable keys
+                // ... (slugify logic) ...
                 const survey = newCreator.survey;
                 const pages = survey.pages;
 
                 // Helper to slugify text
                 const slugify = (text) => {
                     return text.toString().toLowerCase()
-                        .replace(/\s+/g, '-')           // Replace spaces with -
-                        .replace(/[^\w\-]+/g, '')       // Remove all non-word chars
-                        .replace(/\-\-+/g, '-')         // Replace multiple - with single -
-                        .replace(/^-+/, '')             // Trim - from start
-                        .replace(/-+$/, '');            // Trim - from end
+                        .replace(/\s+/g, '-')
+                        .replace(/[^\w\-]+/g, '')
+                        .replace(/\-\-+/g, '-')
+                        .replace(/^-+/, '')
+                        .replace(/-+$/, '');
                 };
 
                 pages.forEach(page => {
                     page.elements.forEach(el => {
-                        // Check if name is generic (starts with question + number) OR just ensure we match title if possible
-                        // We strictly want "indexed on question name", so let's force name = slug(title) if title is set
                         if (el.title && el.name.match(/^question\d+$/)) {
                             const newName = slugify(el.title);
                             if (newName && newName !== el.name) {
-                                // check if name exists
                                 if (!survey.getQuestionByName(newName)) {
                                     el.name = newName;
                                 }
@@ -51,13 +52,18 @@ const SurveyCreatorWidget = () => {
                 const surveyJson = newCreator.JSON;
                 const payload = {
                     title: surveyJson.title || 'Untitled Survey',
-                    surveyJson: surveyJson
+                    surveyJson: surveyJson,
+                    projectId: projectId // Attach Project ID
                 };
 
                 await api.post('/surveys', payload);
                 callback(saveNo, true);
-                alert('Survey Saved! responses will now use meaningful names.');
-                navigate('/dashboard');
+
+                if (projectId) {
+                    navigate(`/projects/${projectId}`);
+                } else {
+                    navigate('/dashboard');
+                }
             } catch (err) {
                 console.error(err);
                 callback(saveNo, false);
@@ -66,7 +72,7 @@ const SurveyCreatorWidget = () => {
         };
 
         return newCreator;
-    }, [navigate]);
+    }, [navigate, projectId]);
 
     return (
         <div className="min-h-screen bg-slate-50 flex flex-col">

@@ -1,13 +1,26 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
+import { useAuth } from '../context/AuthContext';
+
+const img = 'https://images.unsplash.com/photo-1761839258753-85d8eecbbc29?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDF8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D';
 
 const Login = () => {
+    const { login } = useAuth();
     const [isRegistering, setIsRegistering] = useState(false);
-    const [name, setName] = useState('New NGO');
+    const [name, setName] = useState('New Organization');
     const [username, setUsername] = useState('admin');
     const [password, setPassword] = useState('password');
-    const [role, setRole] = useState('USER');
+    const [role, setRole] = useState('ADMIN');
+
+    // For registration: we need Parent ID? 
+    // Actually, registration is usually PUBLIC for new Tenants (Admins).
+    // But currently backend 'register' creates a User.
+    // If I register as ADMIN, I am a new Organization.
+    // If I register as NGO/PM, I need a parent?
+    // Let's assume Public Registration = New Organization (ADMIN) for now.
+    // Or we disable registration for non-Admins here?
+
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const navigate = useNavigate();
@@ -20,6 +33,14 @@ const Login = () => {
         try {
             if (isRegistering) {
                 // Register
+                // Defaulting to creating a new Organization (ADMIN)
+                // PM/NGO creation should be done FROM dashboard.
+                // So here we likely only allow ADMIN (New Org) registration?
+                // Or maybe we allow anyone for demo? 
+
+                // Let's persist existing logic but defaulting to ADMIN?
+                // The select box lets you choose.
+
                 await api.post('/auth/register', { name, username, password, role });
                 setSuccess('Registration successful! Please login.');
                 setIsRegistering(false);
@@ -28,40 +49,42 @@ const Login = () => {
                 const response = await api.post('/auth/login', { username, password });
                 const { token } = response.data;
 
-                localStorage.setItem('token', token);
+                login(token); // Update Context
 
-                // Decode JWT to get tenantId and role
+                // Determine Redirect
+                // Ideally decoding token here too or trusting Context update (async issue?)
+                // Context update is sync if we just called it, but react state is async.
+                // Safest to manual decode for redirect or wait?
+                // Let's decode manually for immediate redirect.
                 const payload = JSON.parse(atob(token.split('.')[1]));
-                localStorage.setItem('tenantId', payload.tenantId);
-                localStorage.setItem('tenantName', username);
-                localStorage.setItem('role', payload.role);
+                const userRole = payload.role;
 
-                if (payload.role === 'ADMIN') {
-                    navigate('/admin-dashboard');
+                if (userRole === 'SUPER_ADMIN') {
+                    navigate('/super-admin');
+                } else if (userRole === 'ADMIN') {
+                    navigate('/admin');
+                } else if (userRole === 'PROJECT_MANAGER') {
+                    navigate('/pm');
                 } else {
-                    navigate('/dashboard');
+                    navigate('/ngo');
                 }
             }
         } catch (err) {
             console.error(err);
             const msg = err.response?.data?.error;
-            if (isRegistering) {
-                setError(msg || 'Registration failed. Username might be taken.');
-            } else {
-                setError(msg || 'Login failed. Check credentials or register first.');
-            }
+            setError(msg || 'Authentication failed.');
         }
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 p-4">
+        <div className="min-h-screen flex items-center justify-center  p-4" style={{ backgroundImage: `url(${img})`, backgroundSize: 'cover', backgroundPosition: 'center' }}>
             <div className="bg-white rounded-xl shadow-2xl p-8 max-w-md w-full">
                 <div className="text-center mb-8">
                     <h2 className="text-3xl font-bold text-gray-800">
                         {isRegistering ? 'Create Account' : 'Welcome Back'}
                     </h2>
                     <p className="text-gray-500 mt-2">
-                        {isRegistering ? 'Sign up to create powerful surveys' : 'Login to manage your forms'}
+                        {isRegistering ? 'Sign up (New Organizations Only)' : 'Login to your account'}
                     </p>
                 </div>
 
@@ -78,17 +101,6 @@ const Login = () => {
                                     placeholder="E.g. Acme Corp"
                                     required
                                 />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                                <select
-                                    value={role}
-                                    onChange={(e) => setRole(e.target.value)}
-                                    className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
-                                >
-                                    <option value="USER">NGO</option>
-                                    <option value="ADMIN">System Admin</option>
-                                </select>
                             </div>
                         </>
                     )}

@@ -1,7 +1,7 @@
 package com.form.forms.config;
 
 import com.form.forms.security.JwtAuthenticationFilter;
-import com.form.forms.tenant.TenantFilter;
+import com.form.forms.tenant.OrganizationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -17,7 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 public class SecurityConfig {
 
     @Autowired
-    private TenantFilter tenantFilter;
+    private OrganizationFilter organizationFilter;
 
     @Bean
     public JwtAuthenticationFilter jwtAuthenticationFilter() {
@@ -32,15 +32,19 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        // .requestMatchers("/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**",
+                        // "/swagger-ui.html").permitAll()
                         .requestMatchers("/api/surveys/submit/**").permitAll()
                         .requestMatchers("/api/surveys/public/**").permitAll()
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated());
 
         // Add our custom filters
-        // TenantFilter goes before everything to establish context if header is present
+        // OrganizationFilter goes before everything to establish context if header is
+        // present
         // Jwt goes before UsernamePassword to establish auth
-        http.addFilterBefore(tenantFilter, UsernamePasswordAuthenticationFilter.class);
+        http.addFilterBefore(organizationFilter, UsernamePasswordAuthenticationFilter.class);
         http.addFilterBefore(jwtAuthenticationFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();

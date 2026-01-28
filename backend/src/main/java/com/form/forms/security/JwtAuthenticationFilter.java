@@ -1,6 +1,6 @@
 package com.form.forms.security;
 
-import com.form.forms.tenant.TenantContext;
+import com.form.forms.tenant.OrganizationContext;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,29 +31,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
                 String username = tokenProvider.getUsernameFromJWT(jwt);
-                String tenantId = tokenProvider.getTenantIdFromJWT(jwt);
+                String organizationId = tokenProvider.getOrganizationIdFromJWT(jwt);
                 String role = tokenProvider.getRoleFromJWT(jwt);
 
-                // Tenant Context Logic
-                if ("ADMIN".equals(role)) {
-                    // Admin can see all, or impersonate specific tenant
-                    String headerTenant = TenantContext.getTenantId();
-
-                    // If header is set (by TenantFilter earlier), we let it be (Impersonation).
-                    // If header is NOT set, we might want to clear it to allow "All" query?
-                    // TenantFilter runs before this. If header was present, Context is set.
-                    // If header was missing, Context is empty/null.
-
-                    // So for Admin, we basically do NOTHING to enforce restrictions.
-                    // We just verify the header is valid if we want to be strict, but for now we
-                    // trust the filter/client.
-
-                    // Optional: If Admin and NO header, we could explicitly set a "GLOBAL" context
-                    // if our repositories need it, but likely null context = global.
+                // Context Logic
+                if ("SUPER_ADMIN".equals(role)) {
+                    // Super Admin can impersonate via header.
+                    // If OrganizationFilter set the context, we leave it.
+                    // If not, context remains null (global view).
                 } else {
-                    // Regular User: MUST be restricted to their tenant
-                    if (tenantId != null) {
-                        TenantContext.setTenantId(tenantId);
+                    // Everyone else: MUST be restricted to their Organization ID from token.
+                    // We OVERRIDE any header injection to prevent spoofing.
+                    if (organizationId != null) {
+                        OrganizationContext.setOrganizationId(organizationId);
                     }
                 }
 
