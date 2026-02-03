@@ -24,12 +24,14 @@ public class ExcelService {
     private final SurveyRepository surveyRepository;
     private final SurveyResponseRepository responseRepository;
     private final SchemaValidator schemaValidator;
+    private final AnalyticsService analyticsService;
 
     public ExcelService(SurveyRepository surveyRepository, SurveyResponseRepository responseRepository,
-            SchemaValidator schemaValidator) {
+            SchemaValidator schemaValidator, AnalyticsService analyticsService) {
         this.surveyRepository = surveyRepository;
         this.responseRepository = responseRepository;
         this.schemaValidator = schemaValidator;
+        this.analyticsService = analyticsService;
     }
 
     // ==================================================================================
@@ -155,49 +157,83 @@ public class ExcelService {
                 return summary;
             }
             Row headerRow = rows.next();
-            Map<Integer, String> columnMapping = new HashMap<>();
+            Map<Integer, QuestionMeta> columnMapping = new HashMap<>();
 
-            // Build map of Title/Name -> Key for matching
-            Map<String, String> schemaMap = buildTitleToNameMap(survey);
+            // Build map of Title/Name -> Meta for matching
+            Map<String, QuestionMeta> schemaMap = buildQuestionMetaMap(survey);
 
             for (Cell cell : headerRow) {
                 String header = cell.getStringCellValue().trim();
-                String matchedKey = schemaMap.get(header.toLowerCase());
-                if (matchedKey != null) {
-                    columnMapping.put(cell.getColumnIndex(), matchedKey);
+                // Check direct match or lowercase match
+                QuestionMeta matchedMeta = schemaMap.get(header.toLowerCase());
+                if (matchedMeta != null) {
+                    columnMapping.put(cell.getColumnIndex(), matchedMeta);
                 }
             }
 
             if (columnMapping.isEmpty()) {
-                summary.addError("No matching columns found. Please ensure headers match question names or titles.");
+                String error = "No matching columns found. Please ensure headers match question names or titles.";
+                System.out.println("Import Error: " + error);
+                summary.addError(error);
                 return summary;
             }
 
+            System.out.println("Found matching columns: " + columnMapping.size());
+
             // 2. Iterate Data Rows
             int rowNum = 1;
+
+            // Fetch existing hashes to prevent duplicates
+            Set<Integer> existingHashes = responseRepository.findBySurveyId(surveyId).stream()
+                    .map(SurveyResponse::getResponseHash)
+                    .filter(Objects::nonNull)
+                    .collect(java.util.stream.Collectors.toSet());
+
+            System.out.println("DEBUG: Found " + existingHashes.size() + " existing response hashes.");
+
             while (rows.hasNext()) {
                 rowNum++;
                 Row currentRow = rows.next();
+                summary.setTotalRows(rowNum - 1); // Track total rows found so far
+
                 try {
                     Map<String, Object> answers = new HashMap<>();
                     boolean hasData = false;
 
-                    for (Map.Entry<Integer, String> entry : columnMapping.entrySet()) {
+                    for (Map.Entry<Integer, QuestionMeta> entry : columnMapping.entrySet()) {
                         Cell cell = currentRow.getCell(entry.getKey());
                         Object value = getCellValue(cell);
 
+                        // Coerce Value
+                        QuestionMeta meta = entry.getValue();
+                        value = coerceValue(value, meta.type, meta.inputType);
+
                         if (value != null) {
-                            answers.put(entry.getValue(), value);
+                            answers.put(meta.name, value);
                             hasData = true;
                         }
                     }
 
                     if (hasData) {
-                        // Validate before creating response
-                        List<String> validationErrors = schemaValidator.validate(survey, answers);
-                        if (!validationErrors.isEmpty()) {
-                            throw new RuntimeException("Validation failed: " + String.join(", ", validationErrors));
+                        // Deduplication Logic
+                        int responseHash = answers.hashCode();
+                        if (existingHashes.contains(responseHash)) {
+                            System.out.println("Skipping duplicate row " + rowNum);
+                            summary.incrementDuplicate(); // Track duplicate
+                            continue;
                         }
+
+                        // Validate before creating response
+                        // SKIP VALIDATION for Excel Import as per requirement:
+                        // "search if header name is matching it should not see the type (not
+                        // restricted)"
+                        /*
+                         * List<String> validationErrors = schemaValidator.validate(survey, answers);
+                         * if (!validationErrors.isEmpty()) {
+                         * throw new RuntimeException("Validation failed: " + String.join(", ",
+                         * validationErrors));
+                         * }
+                         */
 
                         SurveyResponse response = new SurveyResponse();
                         response.setSurveyId(surveyId);
@@ -206,6 +242,7 @@ public class ExcelService {
                         response.setStatus(ResponseStatus.COMPLETED);
                         response.setAnswers(answers);
                         response.setSubmittedAt(new Date());
+                        response.setResponseHash(responseHash); // Save hash for future checks
 
                         Map<String, Object> meta = new HashMap<>();
                         meta.put("importSource", "Excel Upload");
@@ -213,20 +250,53 @@ public class ExcelService {
                         response.setMetadata(meta);
 
                         responsesToSave.add(response);
-                        summary.incrementSuccess();
+                        // Do NOT increment success here. Success is counted only after DB save.
+                        existingHashes.add(responseHash); // Add to local set to catch duplicates within the file itself
+                    } else {
+                        System.out.println("Row " + rowNum + " skipped: No data found in mapped columns.");
+                        summary.incrementEmpty(); // Track empty row
                     }
                 } catch (Exception e) {
+                    System.err.println("Row " + rowNum + " failed: " + e.getMessage());
                     summary.incrementFailed();
                     summary.addError("Row " + rowNum + ": " + e.getMessage());
                 }
             }
         } catch (Exception e) {
+            e.printStackTrace(); // DEBUG: Print full trace to console
             summary.addError("Critical Error processing file: " + e.getMessage());
             return summary;
         }
 
         if (!responsesToSave.isEmpty()) {
-            responseRepository.saveAll(responsesToSave);
+            try {
+                // Save in batches to avoid memory spikes
+                int batchSize = 500;
+                for (int i = 0; i < responsesToSave.size(); i += batchSize) {
+                    int end = Math.min(i + batchSize, responsesToSave.size());
+                    List<SurveyResponse> batch = responsesToSave.subList(i, end);
+                    try {
+                        List<SurveyResponse> savedBatch = responseRepository.saveAll(batch);
+                        summary.addSuccess(savedBatch.size());
+
+                        // Update Analytics for Imported Data
+                        for (SurveyResponse saved : savedBatch) {
+                            analyticsService.logResponse(saved);
+                        }
+
+                    } catch (Exception e) {
+                        // If a batch fails, mark them as failed
+                        System.err.println("Error saving batch: " + e.getMessage());
+                        summary.addFailed(batch.size());
+                        summary.addError("Database Error saving batch of " + batch.size() + " rows: " + e.getMessage());
+                    }
+                }
+            } catch (Exception e) {
+                // Should be caught by inner loop, but just in case
+                System.err.println("Error in batch processing: " + e.getMessage());
+                e.printStackTrace();
+                summary.addError("Critical Database Error: " + e.getMessage());
+            }
         }
 
         return summary;
@@ -235,25 +305,43 @@ public class ExcelService {
     private Object getCellValue(Cell cell) {
         if (cell == null)
             return null;
-        switch (cell.getCellType()) {
-            case STRING:
-                return cell.getStringCellValue();
-            case NUMERIC:
-                if (DateUtil.isCellDateFormatted(cell))
-                    return cell.getDateCellValue().toString();
-                double val = cell.getNumericCellValue();
-                if (val == (long) val)
-                    return String.valueOf((long) val); // Return as string integer if whole
-                return val; // Return Double otherwise
-            case BOOLEAN:
-                return cell.getBooleanCellValue();
-            default:
-                return null;
-        }
+        DataFormatter formatter = new DataFormatter();
+        String value = formatter.formatCellValue(cell);
+        return (value == null || value.trim().isEmpty()) ? null : value.trim();
     }
 
-    private Map<String, String> buildTitleToNameMap(Survey survey) {
-        Map<String, String> map = new HashMap<>();
+    private Object coerceValue(Object value, String type, String inputType) {
+        if (value == null)
+            return null;
+        String strVal = value.toString().trim();
+        if (strVal.isEmpty())
+            return null;
+
+        // Numeric Coercion
+        if ("number".equalsIgnoreCase(type) || "text".equalsIgnoreCase(type) && "number".equalsIgnoreCase(inputType)) {
+            try {
+                // Handle currency symbols or commas if present? For now simple parsing.
+                return Double.parseDouble(strVal.replace(",", ""));
+            } catch (NumberFormatException e) {
+                // If it fails, return original string and let validator complain
+                return strVal;
+            }
+        }
+
+        // Boolean Coercion
+        if ("boolean".equalsIgnoreCase(type)) {
+            if ("yes".equalsIgnoreCase(strVal) || "true".equalsIgnoreCase(strVal) || "1".equals(strVal))
+                return true;
+            if ("no".equalsIgnoreCase(strVal) || "false".equalsIgnoreCase(strVal) || "0".equals(strVal))
+                return false;
+            return strVal;
+        }
+
+        return strVal;
+    }
+
+    private Map<String, QuestionMeta> buildQuestionMetaMap(Survey survey) {
+        Map<String, QuestionMeta> map = new HashMap<>();
         Map<String, Object> json = survey.getSurveyJson();
         if (json == null || !json.containsKey("pages"))
             return map;
@@ -265,13 +353,32 @@ public class ExcelService {
                 for (Map<String, Object> el : elements) {
                     String name = (String) el.get("name");
                     String title = (String) el.get("title");
+                    String type = (String) el.get("type");
+                    String inputType = (String) el.get("inputType");
 
-                    map.put(name.toLowerCase(), name);
+                    QuestionMeta meta = new QuestionMeta(name, type, inputType);
+
+                    // Map by name (lowercase)
+                    map.put(name.toLowerCase(), meta);
+
+                    // Map by title (lowercase) if present
                     if (title != null)
-                        map.put(title.toLowerCase(), name);
+                        map.put(title.toLowerCase(), meta);
                 }
             }
         }
         return map;
+    }
+
+    private static class QuestionMeta {
+        String name;
+        String type;
+        String inputType;
+
+        public QuestionMeta(String name, String type, String inputType) {
+            this.name = name;
+            this.type = type;
+            this.inputType = inputType;
+        }
     }
 }

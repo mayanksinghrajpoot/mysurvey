@@ -1,0 +1,99 @@
+# FormsFlow Entity Relationship Diagram
+
+```mermaid
+erDiagram
+    %% Entities
+    
+    %% Users Collection (One collection, differentiated by Role)
+    USER {
+        string id PK
+        string organizationId FK "Shared Tenant ID"
+        string username
+        string password
+        string role "ADMIN, PROJECT_MANAGER, NGO, SUPER_ADMIN"
+        string parentId FK "Creator of this user"
+        string[] associatedPmIds "For NGOs: List of PMs they work with"
+        date createdAt
+    }
+
+    %% Project Collection
+    PROJECT {
+        string id PK
+        string organizationId FK "Shared Tenant ID"
+        string name
+        string description
+        string[] projectManagerIds FK "List of Assigned PMs (User IDs)"
+        string status "ACTIVE, ARCHIVED"
+        date createdAt
+        date updatedAt
+    }
+
+    %% Survey Collection
+    SURVEY {
+        string id PK
+        string organizationId FK "Shared Tenant ID"
+        string projectId FK "Parent Project"
+        string title
+        string description
+        string createdBy FK "PM who created it"
+        string[] assignedNgoIds "NGOs with access"
+        json surveyJson "Form Definition"
+        string status "DRAFT, PUBLISHED"
+        int version
+        date createdAt
+    }
+
+    %% Response Collection
+    RESPONSE {
+        string id PK
+        string organizationId FK "Shared Tenant ID"
+        string surveyId FK "Parent Survey"
+        string respondentId FK "User (NGO) who submitted"
+        json answers "Submission Data"
+        int surveyVersion
+        date submittedAt
+        string status
+    }
+
+    %% Relationships
+
+    %% Organization / Tenancy (Implicit via organizationId)
+    %% Explicit Relationships:
+    
+    %% Many-to-Many: Projects can have multiple PMs, PMs can have multiple Projects
+    PROJECT }|--|{ USER : "managed by (PMs)"
+    
+    %% One-to-Many: Admins create Projects
+    USER ||--o{ PROJECT : "creates (as Admin)"
+    
+    %% One-to-Many: A Project contains many Surveys
+    PROJECT ||--o{ SURVEY : "contains"
+    
+    %% One-to-Many: A PM creates Surveys (must be within a Project)
+    USER ||--o{ SURVEY : "creates (as PM)"
+    
+    %% Many-to-Many: A Survey is assigned to multiple NGOs
+    SURVEY }|--|{ USER : "assigned to (NGOs)"
+    
+    %% One-to-Many: Responses belong to a Survey
+    SURVEY ||--o{ RESPONSE : "collects"
+    
+    %% One-to-One: A Response is submitted by a User (NGO)
+    USER ||--o{ RESPONSE : "submits (as NGO)"
+    
+    %% One-to-Many: User Hierarchy (Admin creates PMs/NGOs)
+    USER ||--o{ USER : "created by (parent)"
+
+```
+
+## Hierarchy Overview
+
+1.  **Organization (Tenant)**: The top-level grouping. All entities ([User](file:///Users/msr/Documents/spring/forms/backend/src/main/java/com/form/forms/model/User.java#7-102), [Project](file:///Users/msr/Documents/spring/forms/backend/src/main/java/com/form/forms/model/Project.java#8-94), [Survey](file:///Users/msr/Documents/spring/forms/backend/src/main/java/com/form/forms/model/Survey.java#10-156), [Response](file:///Users/msr/Documents/spring/forms/backend/src/main/java/com/form/forms/model/SurveyResponse.java#11-107)) belong to an `organizationId`.
+2.  **User Hierarchy**:
+    *   **Admin**: Manages the Organization. Creates Projects and Users.
+    *   **Project Manager (PM)**: Assigned to **Projects** (Many-to-Many). Manages Surveys within those Projects.
+    *   **NGO**: Assigned to Surveys to collect data. Associated with PMs.
+3.  **Data Hierarchy**:
+    *   **Project**: The central container. Represents a real-world initiative (e.g., "Vaccination Drive 2026"). Can be managed by multiple PMs.
+    *   **Survey**: The form definition. **Must belong to a Project.**
+    *   **Response**: A single submission of a Survey.

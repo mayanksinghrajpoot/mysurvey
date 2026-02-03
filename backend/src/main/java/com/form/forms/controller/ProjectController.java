@@ -4,10 +4,14 @@ import com.form.forms.model.Project;
 import com.form.forms.model.User;
 import com.form.forms.repository.UserRepository;
 import com.form.forms.service.ProjectService;
+import com.form.forms.exception.ResourceNotFoundException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
+
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -34,15 +38,28 @@ public class ProjectController {
     // We should better use the User object to get role and org ID
     private User getCurrentUser() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        String username = (String) auth.getPrincipal();
+        if (auth == null || !auth.isAuthenticated())
+            return null;
+
+        String username = null;
+        Object principal = auth.getPrincipal();
+        if (principal instanceof org.springframework.security.core.userdetails.UserDetails) {
+            username = ((org.springframework.security.core.userdetails.UserDetails) principal).getUsername();
+        } else if (principal instanceof String) {
+            username = (String) principal;
+        }
+
+        if (username == null)
+            return null;
         return userRepository.findByUsername(username).orElse(null);
     }
 
     @GetMapping
     public ResponseEntity<List<Project>> getProjects(@RequestHeader("X-ORGANIZATION-ID") String organizationId) {
         User user = getCurrentUser();
-        if (user == null)
-            return ResponseEntity.status(401).build();
+        if (user == null) {
+            throw new BadCredentialsException("User not authenticated");
+        }
 
         // If specific logic for PM vs Admin
         if (user.getRole().name().equals("PROJECT_MANAGER")) {
@@ -57,7 +74,7 @@ public class ProjectController {
     public ResponseEntity<Project> getProject(@PathVariable String id) {
         return projectService.getProjectById(id)
                 .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found with id: " + id));
     }
 
     @PostMapping
@@ -69,7 +86,7 @@ public class ProjectController {
             project.setOrganizationId(organizationId);
             return ResponseEntity.ok(projectService.createProject(project));
         }
-        return ResponseEntity.status(403).build();
+        throw new AccessDeniedException("Only Admins can create projects");
     }
 
     @PutMapping("/{id}")
@@ -79,6 +96,24 @@ public class ProjectController {
         if (user != null && (user.getRole().name().equals("ADMIN") || user.getRole().name().equals("SUPER_ADMIN"))) {
             return ResponseEntity.ok(projectService.updateProject(id, project));
         }
-        return ResponseEntity.status(403).build();
+        throw new AccessDeniedException("Only Admins can update projects");
+    }
+
+    @PostMapping("/{id}/managers")
+    public ResponseEntity<Project> addManager(@PathVariable String id,
+            @RequestBody java.util.Map<String, String> payload) {
+        String pmId = payload.get("pmId");
+        Project project = projectService.getProjectById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+        project.getProjectManagerIds().add(pmId);
+        return ResponseEntity.ok(projectService.updateProject(id, project));
+    }
+
+    @DeleteMapping("/{id}/managers/{pmId}")
+    public ResponseEntity<Project> removeManager(@PathVariable String id, @PathVariable String pmId) {
+        Project project = projectService.getProjectById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+        project.getProjectManagerIds().remove(pmId);
+        return ResponseEntity.ok(projectService.updateProject(id, project));
     }
 }

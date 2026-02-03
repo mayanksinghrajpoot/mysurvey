@@ -32,7 +32,6 @@ const ProjectDetailView = () => {
             ]);
             setProject(projRes.data);
             setSurveys(surveyRes.data);
-            if (projRes.data.projectManagerId) setSelectedPmId(projRes.data.projectManagerId);
         } catch (error) {
             console.error("Failed to fetch details", error);
         } finally {
@@ -49,26 +48,43 @@ const ProjectDetailView = () => {
         }
     };
 
-    const handleAssignPm = async () => {
+    const handleAddPm = async () => {
         setAssigning(true);
         try {
-            const updatedProject = { ...project, projectManagerId: selectedPmId };
-            await api.put(`/projects/${id}`, updatedProject);
-            setProject(updatedProject);
+            await api.post(`/projects/${id}/managers`, { pmId: selectedPmId });
+            // Refresh
+            const res = await api.get(`/projects/${id}`);
+            setProject(res.data);
+
             setShowAssignModal(false);
-            alert("Project Manager assigned successfully!");
+            setSelectedPmId('');
+            alert("Project Manager added successfully!");
         } catch (error) {
             console.error(error);
-            alert("Failed to assign PM");
+            alert("Failed to add PM");
         } finally {
             setAssigning(false);
         }
     };
 
+    const handleRemovePm = async (pmId) => {
+        if (!window.confirm("Remove this PM from the project?")) return;
+        try {
+            await api.delete(`/projects/${id}/managers/${pmId}`);
+            // Refresh
+            const res = await api.get(`/projects/${id}`);
+            setProject(res.data);
+        } catch (error) {
+            console.error(error);
+            alert("Failed to remove PM");
+        }
+    }
+
     if (loading) return <div className="p-8 text-center text-slate-500">Loading details...</div>;
     if (!project) return <div className="p-8 text-center text-red-500">Project not found.</div>;
 
-    const pmName = pms.find(p => p.id === project.projectManagerId)?.name || 'Unassigned';
+    // Helper to get PM names
+    const assignedPmIds = project.projectManagerIds || [];
 
     return (
         <div className="space-y-6 animate-fade-in-up md:p-6 p-4">
@@ -85,28 +101,46 @@ const ProjectDetailView = () => {
                         <h1 className="text-3xl font-bold text-slate-900 mb-2">{project.name}</h1>
                         <p className="text-slate-600 max-w-2xl">{project.description}</p>
                     </div>
-                    {isAdmin() && (
-                        <button
-                            onClick={() => setShowAssignModal(true)}
-                            className="text-sm bg-slate-100 text-slate-700 px-3 py-1.5 rounded-full hover:bg-slate-200 transition flex items-center"
-                        >
-                            👤 {project.projectManagerId ? 'Change PM' : 'Assign PM'}
-                        </button>
-                    )}
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-4 text-sm">
-                    <div className="flex items-center space-x-2 text-slate-600">
-                        <span className="font-semibold">Project Manager:</span>
-                        <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded border border-blue-100">
-                            {project.projectManagerId ? pmName : 'None Assigned'}
-                        </span>
-                    </div>
                     <div className="flex items-center space-x-2 text-slate-600">
                         <span className="font-semibold">Status:</span>
                         <span className="bg-green-50 text-green-700 px-2 py-0.5 rounded border border-green-100 text-xs uppercase">
                             {project.status}
                         </span>
+                    </div>
+                </div>
+
+                {/* Managed PM List */}
+                <div className="mt-6 border-t border-slate-100 pt-4">
+                    <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold text-slate-800">Assigned Project Managers</h3>
+                        {isAdmin() && (
+                            <button
+                                onClick={() => setShowAssignModal(true)}
+                                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
+                            >
+                                + Add Manager
+                            </button>
+                        )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                        {assignedPmIds.length === 0 && <span className="text-slate-400 text-sm italic">No managers assigned.</span>}
+
+                        {assignedPmIds.map(pmId => {
+                            const pm = pms.find(u => u.id === pmId);
+                            const name = pm ? pm.name : 'Unknown PM';
+                            return (
+                                <div key={pmId} className="flex items-center space-x-1 bg-slate-100 text-slate-700 px-2 py-1 rounded text-sm">
+                                    <span>{name}</span>
+                                    {isAdmin() && (
+                                        <button onClick={() => handleRemovePm(pmId)} className="text-slate-400 hover:text-red-500 ml-1">×</button>
+                                    )}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             </div>
@@ -164,7 +198,7 @@ const ProjectDetailView = () => {
             {showAssignModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-fade-in-up">
-                        <h2 className="text-xl font-bold mb-4 text-slate-800">Assign Project Manager</h2>
+                        <h2 className="text-xl font-bold mb-4 text-slate-800">Add Project Manager</h2>
                         <div className="mb-6">
                             <label className="block text-sm font-medium text-slate-700 mb-2">Select Manager</label>
                             <select
@@ -173,14 +207,14 @@ const ProjectDetailView = () => {
                                 className="w-full border-slate-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring-blue-500"
                             >
                                 <option value="">Select a PM...</option>
-                                {pms.map(pm => (
+                                {pms.filter(pm => !assignedPmIds.includes(pm.id)).map(pm => (
                                     <option key={pm.id} value={pm.id}>{pm.name} (@{pm.username})</option>
                                 ))}
                             </select>
                         </div>
                         <div className="flex justify-end space-x-3">
                             <button onClick={() => setShowAssignModal(false)} className="px-4 py-2 border border-slate-300 rounded text-slate-700">Cancel</button>
-                            <button onClick={handleAssignPm} disabled={assigning || !selectedPmId} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">Save</button>
+                            <button onClick={handleAddPm} disabled={assigning || !selectedPmId} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">Add Manager</button>
                         </div>
                     </div>
                 </div>

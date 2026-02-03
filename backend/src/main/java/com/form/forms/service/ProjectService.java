@@ -18,7 +18,7 @@ public class ProjectService {
     }
 
     public List<Project> getProjectsForPM(String organizationId, String pmId) {
-        return projectRepository.findByOrganizationIdAndProjectManagerId(organizationId, pmId);
+        return projectRepository.findByOrganizationIdAndProjectManagerIdsContaining(organizationId, pmId);
     }
 
     public Project createProject(Project project) {
@@ -31,7 +31,7 @@ public class ProjectService {
             Project existingProject = optionalProject.get();
             existingProject.setName(projectDetails.getName());
             existingProject.setDescription(projectDetails.getDescription());
-            existingProject.setProjectManagerId(projectDetails.getProjectManagerId());
+            existingProject.setProjectManagerIds(projectDetails.getProjectManagerIds());
             existingProject.setStatus(projectDetails.getStatus());
             existingProject.setUpdatedAt(new java.util.Date());
             return projectRepository.save(existingProject);

@@ -117,6 +117,12 @@ const AdminDashboard = () => {
                                 >
                                     Overview
                                 </button>
+                                <Link
+                                    to="/projects"
+                                    className={`px-3 py-1.5 rounded text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50`}
+                                >
+                                    Projects
+                                </Link>
                                 <button
                                     onClick={() => setActiveTab('management')}
                                     className={`px-3 py-1.5 rounded text-sm font-medium ${activeTab === 'management' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:text-slate-900'}`}

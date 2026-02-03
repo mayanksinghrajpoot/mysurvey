@@ -17,12 +17,13 @@ public class Project {
     private String organizationId; // Points to the Corporate Admin (Tenant)
 
     @Indexed
-    private String projectManagerId; // Assigned PM
+    // List of Project Managers assigned to this project
+    private java.util.Set<String> projectManagerIds = new java.util.HashSet<>();
 
     private ProjectStatus status = ProjectStatus.ACTIVE;
 
-    private Date createdAt = new Date();
-    private Date updatedAt;
+    private java.util.Date createdAt = new java.util.Date();
+    private java.util.Date updatedAt;
 
     // Getters and Setters
 
@@ -58,12 +59,12 @@ public class Project {
         this.organizationId = organizationId;
     }
 
-    public String getProjectManagerId() {
-        return projectManagerId;
+    public java.util.Set<String> getProjectManagerIds() {
+        return projectManagerIds;
     }
 
-    public void setProjectManagerId(String projectManagerId) {
-        this.projectManagerId = projectManagerId;
+    public void setProjectManagerIds(java.util.Set<String> projectManagerIds) {
+        this.projectManagerIds = projectManagerIds;
     }
 
     public ProjectStatus getStatus() {

@@ -4,6 +4,10 @@ import com.form.forms.model.Role;
 import com.form.forms.model.User;
 import com.form.forms.repository.UserRepository;
 import com.form.forms.security.JwtTokenProvider;
+import com.form.forms.exception.BadRequestException;
+import com.form.forms.exception.ResourceNotFoundException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -40,10 +44,10 @@ public class AuthService {
                 return tokenProvider.generateToken(authentication, user.getId(), user.getRole(),
                         user.getOrganizationId());
             } else {
-                throw new RuntimeException("Password mismatch for user: " + username);
+                throw new BadCredentialsException("Invalid username or password");
             }
         } else {
-            throw new RuntimeException("User not found: " + username);
+            throw new BadCredentialsException("Invalid username or password"); // Generic message for security
         }
     }
 
@@ -53,13 +57,13 @@ public class AuthService {
         password = password.trim();
 
         if (userRepository.findByUsername(username).isPresent()) {
-            throw new RuntimeException("Username already exists");
+            throw new BadRequestException("Username already exists");
         }
 
         User creator = null;
         if (parentId != null) {
             creator = userRepository.findById(parentId)
-                    .orElseThrow(() -> new RuntimeException("Parent user not found"));
+                    .orElseThrow(() -> new ResourceNotFoundException("Parent user not found"));
         }
 
         // Validate Hierarchy
@@ -108,20 +112,20 @@ public class AuthService {
 
     // Association Method
     public void addAssociation(String ngoId, String pmId) {
-        User ngo = userRepository.findById(ngoId).orElseThrow(() -> new RuntimeException("NGO not found"));
-        User pm = userRepository.findById(pmId).orElseThrow(() -> new RuntimeException("PM not found"));
+        User ngo = userRepository.findById(ngoId).orElseThrow(() -> new ResourceNotFoundException("NGO not found"));
+        User pm = userRepository.findById(pmId).orElseThrow(() -> new ResourceNotFoundException("PM not found"));
 
         if (ngo.getRole() != Role.NGO)
-            throw new RuntimeException("Target user is not an NGO");
+            throw new BadRequestException("Target user is not an NGO");
         if (pm.getRole() != Role.PROJECT_MANAGER)
-            throw new RuntimeException("Target user is not a PM");
+            throw new BadRequestException("Target user is not a PM");
 
         ngo.getAssociatedPmIds().add(pmId);
         userRepository.save(ngo);
     }
 
     public void removeAssociation(String ngoId, String pmId) {
-        User ngo = userRepository.findById(ngoId).orElseThrow(() -> new RuntimeException("NGO not found"));
+        User ngo = userRepository.findById(ngoId).orElseThrow(() -> new ResourceNotFoundException("NGO not found"));
         ngo.getAssociatedPmIds().remove(pmId);
         userRepository.save(ngo);
     }
@@ -130,7 +134,7 @@ public class AuthService {
     public User createFirstSuperAdmin(String name, String username, String password) {
         if (userRepository.count() > 0) {
             if (userRepository.findByUsername(username).isPresent()) {
-                throw new RuntimeException("Username exists");
+                throw new BadRequestException("Username exists");
             }
         }
 
@@ -144,14 +148,14 @@ public class AuthService {
 
     private void validateHierarchy(User creator, Role newRole) {
         if (newRole == Role.SUPER_ADMIN) {
-            throw new RuntimeException("Cannot create Super Admin manually via API");
+            throw new BadRequestException("Cannot create Super Admin manually via API");
         }
 
         if (creator == null) {
             // Allow ADMIN to be created without parent (New Organization self-registration)
             if (newRole == Role.ADMIN)
                 return;
-            throw new RuntimeException("Creator required");
+            throw new BadRequestException("Creator required");
         }
 
         Role creatorRole = creator.getRole();
@@ -172,7 +176,7 @@ public class AuthService {
         if (creatorRole == Role.PROJECT_MANAGER && newRole == Role.NGO)
             return;
 
-        throw new RuntimeException("Unauthorized: " + creatorRole + " cannot create " + newRole);
+        throw new AccessDeniedException("Unauthorized: " + creatorRole + " cannot create " + newRole);
     }
 
     public List<User> getAllUsers() {
@@ -212,10 +216,11 @@ public class AuthService {
     }
 
     public User getUserById(String id) {
-        return userRepository.findById(id).orElseThrow(() -> new RuntimeException("User not found"));
+        return userRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
     public User getUserByUsername(String username) {
-        return userRepository.findByUsername(username).orElseThrow(() -> new RuntimeException("User not found"));
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 }

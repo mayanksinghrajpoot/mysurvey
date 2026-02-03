@@ -7,5 +7,5 @@ import java.util.List;
 public interface ProjectRepository extends MongoRepository<Project, String> {
     List<Project> findByOrganizationId(String organizationId);
 
-    List<Project> findByOrganizationIdAndProjectManagerId(String organizationId, String projectManagerId);
+    List<Project> findByOrganizationIdAndProjectManagerIdsContaining(String organizationId, String projectManagerId);
 }

@@ -5,6 +5,7 @@ import com.form.forms.model.Survey;
 import com.form.forms.model.SurveyResponse;
 import com.form.forms.service.ExcelService;
 import com.form.forms.service.SurveyService;
+import com.form.forms.exception.BadRequestException;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -64,8 +65,11 @@ public class SurveyController {
     }
 
     @GetMapping("/{id}/responses")
-    public ResponseEntity<List<SurveyResponse>> getResponses(@PathVariable String id) {
-        return ResponseEntity.ok(surveyService.getSurveyResponses(id));
+    public ResponseEntity<List<SurveyResponse>> getResponses(
+            @PathVariable String id,
+            @RequestParam(required = false) String questionKey,
+            @RequestParam(required = false) String answerValue) {
+        return ResponseEntity.ok(surveyService.getFilteredResponses(id, questionKey, answerValue));
     }
 
     @PostMapping("/{id}/import")
@@ -75,7 +79,7 @@ public class SurveyController {
             ImportSummary summary = excelService.importResponses(id, file);
             return ResponseEntity.ok(summary);
         } catch (IOException e) {
-            return ResponseEntity.badRequest().body("Failed to process file: " + e.getMessage());
+            throw new BadRequestException("Failed to process file: " + e.getMessage(), e);
         }
     }
 
@@ -92,7 +96,7 @@ public class SurveyController {
                             .parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                     .body(new InputStreamResource(in));
         } catch (IOException e) {
-            return ResponseEntity.internalServerError().build();
+            throw new RuntimeException("Failed to export data", e);
         }
     }
 }

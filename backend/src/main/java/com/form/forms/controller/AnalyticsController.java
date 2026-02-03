@@ -18,14 +18,35 @@ public class AnalyticsController {
     }
 
     @GetMapping("/{surveyId}/questions/{questionKey}")
-    public ResponseEntity<List<Map>> getQuestionStats(
+    public ResponseEntity<List<Map<String, Object>>> getQuestionStats(
             @PathVariable String surveyId,
-            @PathVariable String questionKey) {
-        return ResponseEntity.ok(analyticsService.getQuestionCounts(surveyId, questionKey));
+            @PathVariable String questionKey,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        return ResponseEntity.ok(analyticsService.getQuestionCounts(surveyId, questionKey, startDate, endDate));
     }
 
     @GetMapping("/{surveyId}/timeline")
-    public ResponseEntity<List<Map>> getTimelineStats(@PathVariable String surveyId) {
-        return ResponseEntity.ok(analyticsService.getTimeSeriesStats(surveyId));
+    public ResponseEntity<List<Map<String, Object>>> getTimelineStats(
+            @PathVariable String surveyId,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        return ResponseEntity.ok(analyticsService.getTimeSeriesStats(surveyId, startDate, endDate));
+    }
+
+    @PostMapping("/{surveyId}/backfill")
+    public ResponseEntity<String> backfillAnalytics(@PathVariable String surveyId) {
+        analyticsService.backfillSurvey(surveyId);
+        return ResponseEntity.ok("Backfill started for survey: " + surveyId);
+    }
+
+    @GetMapping("/{surveyId}/questions/{questionKey}/metric")
+    public ResponseEntity<Map<String, Object>> getMetric(
+            @PathVariable String surveyId,
+            @PathVariable String questionKey,
+            @RequestParam String type,
+            @RequestParam(required = false) String startDate,
+            @RequestParam(required = false) String endDate) {
+        return ResponseEntity.ok(analyticsService.calculateMetric(surveyId, questionKey, type, startDate, endDate));
     }
 }

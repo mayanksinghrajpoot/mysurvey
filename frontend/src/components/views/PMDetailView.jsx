@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext';
 const PMDetailView = ({ pmId, pmName, isOwnView }) => {
     const { user } = useAuth(); // Get current user for Role Check
     const [surveys, setSurveys] = useState([]);
+    const [projects, setProjects] = useState([]); // New: Projects Map
     const [ngos, setNgos] = useState([]); // Associated NGOs
     const [pms, setPms] = useState([]);   // All PMs (For Admin Assignment)
     const [loading, setLoading] = useState(true);
@@ -32,13 +33,17 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
         try {
             // Fetch Surveys
             const surveyRes = await api.get('/surveys');
-            // Filter: Created By this PM. 
-            // If Admin is viewing "PMDetailView" for a specific PM, we filter by that PM.
-            // If Admin is viewing THEMSELVES (isOwnView), they see their created surveys.
-            // IMPORTANT: If we transfer ownership, the survey disappears from THIS list if pmId changes?
-            // Yes, if we transfer FROM this PM to another, it should vanish from this view upon refresh.
-            const pmSurveys = surveyRes.data.filter(s => s.createdBy === pmId);
-            setSurveys(pmSurveys);
+            // Backend now handles deduplication and extensive fetching for PMs.
+            // We just use the result directly.
+            // However, we might want to ensure we don't accidentally showing surveys not relevant if API is loose,
+            // but api.get('/surveys') is context aware.
+            setSurveys(surveyRes.data);
+
+            // Fetch Projects for Name Mapping
+            // If Admin, fetching all projects might be heavy, but for now it's okay.
+            // If PM, fetching /projects returns their projects.
+            const projRes = await api.get('/projects');
+            setProjects(projRes.data);
 
             // Fetch Users (NGOs & PMs)
             const userRes = await api.get('/auth/users');
@@ -344,6 +349,7 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                             <thead className="bg-slate-50">
                                 <tr>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Survey Name</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Project</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider w-32">Date</th>
                                     <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider w-20"></th>
                                 </tr>
@@ -358,6 +364,11 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                                         <td className="px-6 py-4">
                                             <div className="font-medium text-slate-900 group-hover:text-blue-600">{s.title}</div>
                                             <div className="text-xs text-slate-400 font-mono mt-0.5">{s.id.substring(0, 8)}...</div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <span className={`text-xs px-2 py-1 rounded-full ${s.projectId ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                {s.projectId ? (projects.find(p => p.id === s.projectId)?.name || 'Unknown Project') : 'No Project'}
+                                            </span>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                                             {s.createdAt ? new Date(s.createdAt).toLocaleDateString() : '-'}

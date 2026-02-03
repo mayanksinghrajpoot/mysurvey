@@ -1,11 +1,16 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 const SurveyResponses = () => {
     const { id } = useParams();
     const { user } = useAuth();
+    const [searchParams, setSearchParams] = useSearchParams();
+
+    // Drill down params
+    const questionKey = searchParams.get('questionKey');
+    const answerValue = searchParams.get('answerValue');
 
     const [responses, setResponses] = useState([]);
     const [survey, setSurvey] = useState(null);
@@ -26,9 +31,14 @@ const SurveyResponses = () => {
                 // Actually OrganizationContext handles it.
 
                 // Fetch Survey and Responses
+                const responsesParams = {};
+                if (questionKey && answerValue) {
+                    responsesParams.params = { questionKey, answerValue };
+                }
+
                 const [surveyRes, responsesRes] = await Promise.all([
                     api.get(`/surveys/${id}`),
-                    api.get(`/surveys/${id}/responses`)
+                    api.get(`/surveys/${id}/responses`, responsesParams)
                 ]);
 
                 const surveyDef = surveyRes.data;
@@ -91,13 +101,66 @@ const SurveyResponses = () => {
 
         try {
             setLoading(true);
-            await api.post(`/surveys/${id}/import`, formData, {
+            const res = await api.post(`/surveys/${id}/import`, formData, {
                 headers: { 'Content-Type': 'multipart/form-data' }
             });
-            window.location.reload();
+
+            console.log("Import Response Recieved:", res.data); // Debugging
+            const summary = res.data;
+
+            // Check if backend returned valid summary object
+            if (!summary) {
+                alert("Server returned empty response.");
+                setLoading(false);
+                return;
+            }
+
+            // Construct detailed report
+            const report = [
+                `Import Summary:`,
+                `----------------`,
+                `Total Rows Found: ${summary.totalRows || 0}`,
+                `Successfully Imported: ${summary.successCount}`,
+                `Duplicates Skipped: ${summary.duplicateCount || 0}`,
+                `Empty Rows Skipped: ${summary.emptyCount || 0}`,
+                `Failed Rows: ${summary.failedCount}`,
+                `----------------`
+            ];
+
+            const hasErrors = summary.failedCount > 0 || (summary.errors && summary.errors.length > 0);
+
+            if (hasErrors) {
+                report.push(`\nErrors:`);
+                const maxErrors = 10;
+                const errorsToShow = summary.errors || [];
+                report.push(errorsToShow.slice(0, maxErrors).join('\n'));
+                if (errorsToShow.length > maxErrors) {
+                    report.push(`...and ${errorsToShow.length - maxErrors} more error(s).`);
+                }
+            } else if (summary.successCount === 0 && (summary.duplicateCount === 0 && summary.emptyCount === 0)) {
+                report.push(`\nWarning: No data was imported and no specific reason was found (duplicates/empty). Please check your file headers.`);
+            }
+
+            alert(report.join('\n'));
+
+            if (summary.successCount > 0) {
+                window.location.reload();
+            } else {
+                setLoading(false);
+            }
         } catch (err) {
-            console.error(err);
-            alert('Import Failed: ' + (err.response?.data || err.message));
+            console.error("Import Error Caught:", err);
+            let errorMsg = err.message;
+            if (err.response && err.response.data) {
+                const data = err.response.data;
+                // Try to parse if it's an object (Spring Boot error default)
+                if (typeof data === 'object') {
+                    errorMsg = data.message || data.error || JSON.stringify(data);
+                } else {
+                    errorMsg = data;
+                }
+            }
+            alert('Import Failed: ' + errorMsg);
             setLoading(false);
         }
     };
@@ -189,6 +252,22 @@ const SurveyResponses = () => {
                         </div>
                     )}
 
+                    {/* Active Filter Banner */}
+                    {questionKey && answerValue && (
+                        <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded relative flex items-center justify-between" role="alert">
+                            <div className="flex items-center">
+                                <strong className="font-bold mr-1">Filtered View:</strong>
+                                <span className="block sm:inline">Showing responses where <strong>{questionKey}</strong> matches <strong>"{answerValue}"</strong></span>
+                            </div>
+                            <Link
+                                to={`/surveys/${id}/responses`}
+                                className="bg-white hover:bg-slate-50 text-blue-500 font-semibold py-1 px-3 border border-blue-200 rounded shadow-sm text-xs transition"
+                            >
+                                Clear Filter
+                            </Link>
+                        </div>
+                    )}
+
                     <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
                         {filteredResponses.length === 0 ? (
                             <div className="p-12 text-center text-slate-500">No responses found.</div>
@@ -219,6 +298,7 @@ const SurveyResponses = () => {
                                                     </td>
                                                     {columns.map(col => {
                                                         let val = answers[col.key];
+                                                        if (typeof val === 'boolean') val = val.toString();
                                                         if (Array.isArray(val)) val = val.join(', ');
                                                         if (typeof val === 'object' && val !== null) val = JSON.stringify(val);
                                                         if (val === undefined || val === null) val = '-';

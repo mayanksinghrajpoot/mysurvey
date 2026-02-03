@@ -31,6 +31,16 @@ public class SurveyResponse {
 
     private Date submittedAt = new Date();
 
+    private Integer responseHash; // For deduplication
+
+    public Integer getResponseHash() {
+        return responseHash;
+    }
+
+    public void setResponseHash(Integer responseHash) {
+        this.responseHash = responseHash;
+    }
+
     // Getters and Setters
     public String getId() {
         return id;

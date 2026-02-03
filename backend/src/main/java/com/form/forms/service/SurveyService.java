@@ -11,9 +11,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import org.springframework.data.mongodb.core.MongoTemplate;
+import org.springframework.data.mongodb.core.query.Criteria;
+import org.springframework.data.mongodb.core.query.Query;
 
 @Service
 public class SurveyService {
@@ -22,13 +26,22 @@ public class SurveyService {
     private final ResponseRepository responseRepository;
     private final SchemaValidator schemaValidator;
     private final UserRepository userRepository;
+    private final com.form.forms.repository.ProjectRepository projectRepository;
+    private final AnalyticsService analyticsService;
+    private final MongoTemplate mongoTemplate;
 
     public SurveyService(SurveyRepository surveyRepository, ResponseRepository responseRepository,
-            SchemaValidator schemaValidator, UserRepository userRepository) {
+            SchemaValidator schemaValidator, UserRepository userRepository,
+            com.form.forms.repository.ProjectRepository projectRepository,
+            AnalyticsService analyticsService,
+            MongoTemplate mongoTemplate) {
         this.surveyRepository = surveyRepository;
         this.responseRepository = responseRepository;
         this.schemaValidator = schemaValidator;
         this.userRepository = userRepository;
+        this.projectRepository = projectRepository;
+        this.analyticsService = analyticsService;
+        this.mongoTemplate = mongoTemplate;
     }
 
     private Role getCurrentUserRole() {
@@ -63,8 +76,26 @@ public class SurveyService {
         survey.setOrganizationId(organizationId);
 
         // Ensure projectId is valid if provided
+        Role role = getCurrentUserRole();
+
+        // Enforce Project Assignment for PMs
+        if (role == Role.PROJECT_MANAGER && survey.getProjectId() == null) {
+            throw new RuntimeException("Project Managers must assign a survey to a project.");
+        }
+
         if (survey.getProjectId() != null) {
-            // TODO: Validate projectId belongs to organization
+            String projectId = survey.getProjectId();
+            String userId = getCurrentUserId();
+
+            com.form.forms.model.Project project = projectRepository.findById(projectId)
+                    .filter(p -> p.getOrganizationId().equals(organizationId))
+                    .orElseThrow(() -> new RuntimeException("Project not found or access denied"));
+
+            if (role == Role.PROJECT_MANAGER) {
+                if (project.getProjectManagerIds() == null || !project.getProjectManagerIds().contains(userId)) {
+                    throw new RuntimeException("Unauthorized: You are not a manager of this project.");
+                }
+            }
         }
         if (survey.getCreatedAt() == null) {
             survey.setCreatedAt(new Date());
@@ -83,6 +114,7 @@ public class SurveyService {
     }
 
     public Survey updateSurvey(String id, Survey updates) {
+        System.out.println("DEBUG: updateSurvey called for ID: " + id);
         String organizationId = OrganizationContext.getOrganizationId();
         Survey survey = surveyRepository.findById(id)
                 .filter(s -> organizationId == null || s.getOrganizationId().equals(organizationId))
@@ -92,11 +124,21 @@ public class SurveyService {
             survey.setTitle(updates.getTitle());
         if (updates.getDescription() != null)
             survey.setDescription(updates.getDescription());
+
         if (updates.getSurveyJson() != null) {
+            System.out.println("DEBUG: Updating Survey JSON");
             survey.setSurveyJson(updates.getSurveyJson());
-            survey.setMinifiedKeys(generateMinifiedKeys(survey));
+            try {
+                survey.setMinifiedKeys(generateMinifiedKeys(survey));
+            } catch (Exception e) {
+                System.err.println("DEBUG: Failed to generate minified keys: " + e.getMessage());
+                e.printStackTrace();
+                throw new RuntimeException("Error processing survey structure: " + e.getMessage());
+            }
         }
+
         if (updates.getAssignedNgoIds() != null) {
+            System.out.println("DEBUG: Updating NGO Assignments: " + updates.getAssignedNgoIds());
             // Validate: If PM, ensure assigned NGOs are associated with them
             Role role = getCurrentUserRole();
             if (role == Role.PROJECT_MANAGER) {
@@ -109,6 +151,7 @@ public class SurveyService {
 
                 for (String ngoId : updates.getAssignedNgoIds()) {
                     if (!validNgoIds.contains(ngoId)) {
+                        System.err.println("DEBUG: Unauthorized NGO assignment: " + ngoId);
                         throw new RuntimeException(
                                 "Unauthorized assignment: NGO " + ngoId + " is not associated with you.");
                     }
@@ -122,15 +165,11 @@ public class SurveyService {
             Role role = getCurrentUserRole();
             if (role == Role.ADMIN || role == Role.SUPER_ADMIN) {
                 survey.setCreatedBy(updates.getCreatedBy());
-            } else {
-                // Ignore or throw? Usually better to ignore if not authorized to change field,
-                // but if they explicitly sent it, maybe throw. For now, we'll allow it only if
-                // Admin.
-                // If PM tries to change it, it's ignored.
             }
         }
 
         survey.setUpdatedAt(new Date());
+        System.out.println("DEBUG: Saving updated survey");
         return surveyRepository.save(survey);
     }
 
@@ -170,13 +209,25 @@ public class SurveyService {
             return surveyRepository.findByOrganizationId(organizationId);
         } else if (role == Role.PROJECT_MANAGER) {
             String userId = getCurrentUserId();
-            // TODO: Also filter by Project Assignment?
-            // Current Logic: Created By Me. New Logic: In Projects Assigned To Me.
-            // For now, let's keep Created By Me as a fallback or assume PMs still "create"
-            // surveys.
-            // Ideally: return surveyRepository.findByProjectIdIn(projectIds);
             if (userId != null) {
-                return surveyRepository.findByOrganizationIdAndCreatedBy(organizationId, userId);
+                // 1. Get Surveys created by them (Legacy)
+                List<Survey> createdByMe = surveyRepository.findByOrganizationIdAndCreatedBy(organizationId, userId);
+
+                // 2. Get Surveys from Projects they are assigned to
+                List<com.form.forms.model.Project> myProjects = projectRepository
+                        .findByOrganizationIdAndProjectManagerIdsContaining(organizationId, userId);
+                List<Survey> projectSurveys = new java.util.ArrayList<>();
+                for (com.form.forms.model.Project p : myProjects) {
+                    projectSurveys.addAll(surveyRepository.findByProjectId(p.getId()));
+                }
+
+                // Merge and Distinct by ID
+                java.util.List<Survey> combinedList = new java.util.ArrayList<>(createdByMe);
+                combinedList.addAll(projectSurveys);
+
+                return combinedList.stream()
+                        .filter(com.form.forms.util.DistinctByKey.distinctByKey(Survey::getId))
+                        .collect(java.util.stream.Collectors.toList());
             }
             return List.of();
         } else if (role == Role.NGO) {
@@ -257,46 +308,92 @@ public class SurveyService {
         response.setStatus(com.form.forms.model.ResponseStatus.COMPLETED);
         response.setSubmittedAt(new Date());
 
-        return responseRepository.save(response);
+        SurveyResponse saved = responseRepository.save(response);
+        analyticsService.logResponse(saved);
+        return saved;
     }
 
     public List<SurveyResponse> getSurveyResponses(String surveyId) {
+        return getFilteredResponses(surveyId, null, null);
+    }
+
+    public List<SurveyResponse> getFilteredResponses(String surveyId, String questionKey, String answerValue) {
         String organizationId = OrganizationContext.getOrganizationId();
         Survey survey = surveyRepository.findById(surveyId)
                 .filter(s -> organizationId == null || s.getOrganizationId().equals(organizationId))
                 .orElseThrow(() -> new RuntimeException("Survey not found or access denied"));
 
         Role role = getCurrentUserRole();
-        List<SurveyResponse> responses;
 
+        // Build Dynamic Query
+        Query query = new Query();
+        query.addCriteria(Criteria.where("surveyId").is(surveyId));
+
+        // ACL Logic
         if (role == Role.NGO) {
             String userId = getCurrentUserId();
             if (userId != null) {
-                responses = responseRepository.findBySurveyIdAndRespondentId(surveyId, userId);
+                query.addCriteria(Criteria.where("respondentId").is(userId));
             } else {
-                responses = List.of();
+                return List.of();
             }
-        } else {
-            // PM or Admin: gets all
-            responses = responseRepository.findBySurveyId(surveyId);
         }
 
-        if (survey.getMinifiedKeys() != null && !survey.getMinifiedKeys().isEmpty()) {
-            Map<String, String> reverseMap = new java.util.HashMap<>();
-            for (Map.Entry<String, String> entry : survey.getMinifiedKeys().entrySet()) {
-                reverseMap.put(entry.getValue(), entry.getKey());
+        // Drill-down Filter
+        if (questionKey != null && !questionKey.isEmpty() && answerValue != null) {
+            String fieldPath = "answers." + questionKey;
+
+            List<Object> potentialValues = new ArrayList<>();
+            potentialValues.add(answerValue); // Add raw string
+
+            // Try Boolean
+            if ("true".equalsIgnoreCase(answerValue))
+                potentialValues.add(true);
+            else if ("false".equalsIgnoreCase(answerValue))
+                potentialValues.add(false);
+
+            // Try Number (Integer and Double)
+            try {
+                Double d = Double.parseDouble(answerValue);
+                potentialValues.add(d);
+                if (d % 1 == 0) {
+                    potentialValues.add(d.intValue());
+                    potentialValues.add(d.longValue());
+                }
+            } catch (NumberFormatException e) {
+                // Not a number, ignore
             }
 
-            for (SurveyResponse r : responses) {
-                if (r.getAnswers() != null) {
-                    Map<String, Object> decompressed = new java.util.HashMap<>();
-                    for (Map.Entry<String, Object> entry : r.getAnswers().entrySet()) {
-                        String originalKey = reverseMap.get(entry.getKey());
-                        decompressed.put(originalKey != null ? originalKey : entry.getKey(), entry.getValue());
+            // Use 'IN' to match any of the potential representations (String, Int, Double,
+            // Boolean)
+            query.addCriteria(Criteria.where(fieldPath).in(potentialValues));
+        }
+
+        List<SurveyResponse> responses = mongoTemplate.find(query, SurveyResponse.class);
+
+        // Decompression Logic (Shared)
+        try {
+            if (survey.getMinifiedKeys() != null && !survey.getMinifiedKeys().isEmpty()) {
+                Map<String, String> reverseMap = new java.util.HashMap<>();
+                for (Map.Entry<String, String> entry : survey.getMinifiedKeys().entrySet()) {
+                    if (entry.getValue() != null) {
+                        reverseMap.put(entry.getValue(), entry.getKey());
                     }
-                    r.setAnswers(decompressed);
+                }
+
+                for (SurveyResponse r : responses) {
+                    if (r.getAnswers() != null) {
+                        Map<String, Object> decompressed = new java.util.HashMap<>();
+                        for (Map.Entry<String, Object> entry : r.getAnswers().entrySet()) {
+                            String originalKey = reverseMap.get(entry.getKey());
+                            decompressed.put(originalKey != null ? originalKey : entry.getKey(), entry.getValue());
+                        }
+                        r.setAnswers(decompressed);
+                    }
                 }
             }
+        } catch (Exception e) {
+            System.err.println("Error decompressing responses: " + e.getMessage());
         }
 
         return responses;
