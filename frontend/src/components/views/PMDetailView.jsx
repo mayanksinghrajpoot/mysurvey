@@ -38,16 +38,21 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
     const fetchData = async () => {
         setLoading(true);
         try {
-            // 1. Basic Data
-            const [surveyRes, projRes, userRes] = await Promise.all([
-                api.get('/surveys'),
-                api.get('/projects'),
+            // Parallel Fetch: Dashboard Data + Users (for NGO/PM list)
+            const [dashboardRes, userRes] = await Promise.all([
+                api.get(`/dashboard/pm/details/${pmId}`),
                 api.get('/auth/users')
             ]);
 
-            setSurveys(surveyRes.data);
-            setProjects(projRes.data);
+            const data = dashboardRes.data;
 
+            setSurveys(data.surveys || []);
+            setProjects(data.projects || []);
+            setRfqs(data.rfqs || []);
+            setRfps(data.rfps || []);
+            setUtilizations(data.utilizations || []);
+
+            // User Management Data
             // NGOs associated with THIS PM
             const pmNgos = userRes.data.filter(u =>
                 u.role === 'NGO' &&
@@ -59,29 +64,6 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
             if (user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN') {
                 setPms(userRes.data.filter(u => u.role === 'PROJECT_MANAGER'));
             }
-
-            // 2. Operations Data (RFQs, RFPs, Utilizations) - fetch all for PM's projects
-            // Optimally we'd have a purposeful endpoint, but for now we fetch by finding project IDs
-            const pmProjectIds = projRes.data.map(p => p.id); // Assuming simple filtering for now
-            // In a real app we'd filter by PM ownership, but here let's assume all visible projects if Admin, or filtered if PM
-
-            // To be safe, let's just fetch all 'pending' things via known endpoints if possible, or iterate.
-            // Let's iterate projects to get RFQs
-            const rfqPromises = pmProjectIds.map(pid => api.get(`/rfqs/project/${pid}`).catch(() => ({ data: [] })));
-            const rfqResults = await Promise.all(rfqPromises);
-            const allRfqs = rfqResults.flatMap(r => r.data || []);
-            setRfqs(allRfqs);
-
-            // Fetch RFPs for these RFQs
-            const rfpPromises = allRfqs.map(r => api.get(`/rfps/rfq/${r.id}`).catch(() => ({ data: [] })));
-            const rfpResults = await Promise.all(rfpPromises);
-            const allRfps = rfpResults.flatMap(r => r.data || []);
-            setRfps(allRfps);
-
-            // Fetch Utilizations for these RFPs
-            const utilPromises = allRfps.map(r => api.get(`/utilizations/rfp/${r.id}`).catch(() => ({ data: [] })));
-            const utilResults = await Promise.all(utilPromises);
-            setUtilizations(utilResults.flatMap(r => r.data || []));
 
         } catch (error) {
             console.error("Failed to fetch details", error);
@@ -349,6 +331,12 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                 >
                     Budget & Operations
                 </button>
+                <button
+                    onClick={() => setActiveTab('history')}
+                    className={`pb-2 px-3 font-medium ${activeTab === 'history' ? 'border-b-2 border-blue-600 text-blue-700' : 'text-slate-500'}`}
+                >
+                    History
+                </button>
             </div>
 
             {activeTab === 'surveys' && (
@@ -447,7 +435,7 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                                         <div>
                                             <div className="flex justify-between text-sm mb-1">
                                                 <span className="text-slate-500">Released / Budget</span>
-                                                <span className="font-medium text-slate-700">${stats.released.toLocaleString()} / ${stats.totalBudget.toLocaleString()}</span>
+                                                <span className="font-medium text-slate-700">₹{stats.released.toLocaleString()} / ₹{stats.totalBudget.toLocaleString()}</span>
                                             </div>
                                             <div className="w-full bg-slate-100 rounded-full h-2">
                                                 <div className="bg-blue-500 h-2 rounded-full" style={{ width: `${percentReleased}%` }}></div>
@@ -456,7 +444,7 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                                         <div>
                                             <div className="flex justify-between text-sm mb-1">
                                                 <span className="text-slate-500">Utilized / Released</span>
-                                                <span className="font-medium text-slate-700">${stats.utilized.toLocaleString()} / ${stats.released.toLocaleString()}</span>
+                                                <span className="font-medium text-slate-700">₹{stats.utilized.toLocaleString()} / ₹{stats.released.toLocaleString()}</span>
                                             </div>
                                             <div className="w-full bg-slate-100 rounded-full h-2">
                                                 <div className="bg-green-500 h-2 rounded-full" style={{ width: `${percentUtilized}%` }}></div>
@@ -486,7 +474,7 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                                 {utilizations.filter(u => u.status === 'SUBMITTED').map(u => (
                                     <tr key={u.id}>
                                         <td className="px-6 py-4 font-medium text-slate-900">{u.title}</td>
-                                        <td className="px-6 py-4 text-slate-700">${u.amount?.toLocaleString()}</td>
+                                        <td className="px-6 py-4 text-slate-700">₹{u.amount?.toLocaleString()}</td>
                                         <td className="px-6 py-4 text-sm text-blue-600 truncate max-w-xs">{u.proofUrl || '-'}</td>
                                         <td className="px-6 py-4 text-right space-x-2">
                                             <button onClick={() => handleRejectExpense(u.id)} className="text-red-600 hover:text-red-800 text-sm font-medium">Reject</button>
@@ -496,6 +484,75 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                                 ))}
                                 {utilizations.filter(u => u.status === 'SUBMITTED').length === 0 && (
                                     <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-400">No pending verifications.</td></tr>
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
+
+            {activeTab === 'history' && (
+                <div className="space-y-12">
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+                            <h3 className="font-semibold text-slate-800">All Project Milestones</h3>
+                        </div>
+                        <table className="min-w-full divide-y divide-slate-100">
+                            <thead className="bg-slate-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Milestone</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Amount</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Date</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-slate-100">
+                                {rfps.map(r => (
+                                    <tr key={r.id}>
+                                        <td className="px-6 py-4 font-medium text-slate-900">{r.title}</td>
+                                        <td className="px-6 py-4 text-slate-700">₹{r.amount?.toLocaleString()}</td>
+                                        <td className="px-6 py-4">
+                                            {r.status === 'APPROVED' && <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">Released</span>}
+                                            {r.status === 'PENDING_PM' && <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs">Needs Approval</span>}
+                                            {r.status === 'PENDING_ADMIN' && <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">Waiting Admin</span>}
+                                            {r.status === 'REJECTED' && <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs">Rejected</span>}
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-slate-500">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '-'}</td>
+                                    </tr>
+                                ))}
+                                {rfps.length === 0 && <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-400">No milestones found.</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
+                            <h3 className="font-semibold text-slate-800">All Expenses</h3>
+                        </div>
+                        <table className="min-w-full divide-y divide-slate-100">
+                            <thead className="bg-slate-50">
+                                <tr>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Expense Title</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Amount</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Proof</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-slate-100">
+                                {utilizations.map(u => (
+                                    <tr key={u.id}>
+                                        <td className="px-6 py-4 font-medium text-slate-900">{u.title}</td>
+                                        <td className="px-6 py-4 text-slate-700">₹{u.amount?.toLocaleString()}</td>
+                                        <td className="px-6 py-4 text-sm text-blue-600 truncate max-w-xs">{u.proofUrl || '-'}</td>
+                                        <td className="px-6 py-4">
+                                            {u.status === 'VERIFIED' && <span className="text-green-600 font-medium">Verified</span>}
+                                            {u.status === 'REJECTED' && <span className="text-red-600 font-medium">Rejected</span>}
+                                            {u.status === 'SUBMITTED' && <span className="text-yellow-600">Pending Verification</span>}
+                                        </td>
+                                    </tr>
+                                ))}
+                                {utilizations.length === 0 && (
+                                    <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-400">No expenses found.</td></tr>
                                 )}
                             </tbody>
                         </table>

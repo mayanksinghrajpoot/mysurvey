@@ -4,7 +4,7 @@ import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-toastify';
 
-const ProjectList = () => {
+const ProjectList = ({ onSelectProject }) => {
     const { user } = useAuth();
     const [projects, setProjects] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -71,30 +71,57 @@ const ProjectList = () => {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {projects.map(project => (
-                    <Link to={`/projects/${project.id}`} key={project.id} className="group block">
-                        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md hover:border-blue-300 transition h-full flex flex-col">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className={`p-3 rounded-lg ${project.status === 'ACTIVE' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
-                                    📁
+                    onSelectProject ? (
+                        <div key={project.id} onClick={() => onSelectProject(project)} className="group block cursor-pointer">
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md hover:border-blue-300 transition h-full flex flex-col">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className={`p-3 rounded-lg ${project.status === 'ACTIVE' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                                        📁
+                                    </div>
+                                    <span className={`text-xs px-2 py-1 rounded-full ${project.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-slate-100 text-slate-500'}`}>
+                                        {project.status}
+                                    </span>
                                 </div>
-                                <span className={`text-xs px-2 py-1 rounded-full ${project.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-slate-100 text-slate-500'}`}>
-                                    {project.status}
-                                </span>
-                            </div>
 
-                            <h3 className="font-bold text-lg text-slate-800 mb-2 group-hover:text-blue-600 transition">{project.name}</h3>
-                            <p className="text-sm text-slate-500 mb-4 line-clamp-2">{project.description || 'No description provided.'}</p>
+                                <h3 className="font-bold text-lg text-slate-800 mb-2 group-hover:text-blue-600 transition">{project.name}</h3>
+                                <p className="text-sm text-slate-500 mb-4 line-clamp-2">{project.description || 'No description provided.'}</p>
 
-                            <div className="mt-auto flex items-center justify-between pt-4 border-t border-slate-100">
-                                <span className="text-xs text-slate-400">
-                                    Created {new Date(project.createdAt).toLocaleDateString()}
-                                </span>
-                                <span className="text-sm font-medium text-blue-600 group-hover:translate-x-1 transition">
-                                    View Details →
-                                </span>
+                                <div className="mt-auto flex items-center justify-between pt-4 border-t border-slate-100">
+                                    <span className="text-xs text-slate-400">
+                                        Created {new Date(project.createdAt).toLocaleDateString()}
+                                    </span>
+                                    <span className="text-sm font-medium text-blue-600 group-hover:translate-x-1 transition">
+                                        View Details →
+                                    </span>
+                                </div>
                             </div>
                         </div>
-                    </Link>
+                    ) : (
+                        <Link to={`/projects/${project.id}`} key={project.id} className="group block">
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 hover:shadow-md hover:border-blue-300 transition h-full flex flex-col">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className={`p-3 rounded-lg ${project.status === 'ACTIVE' ? 'bg-blue-50 text-blue-600' : 'bg-slate-100 text-slate-500'}`}>
+                                        📁
+                                    </div>
+                                    <span className={`text-xs px-2 py-1 rounded-full ${project.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-slate-100 text-slate-500'}`}>
+                                        {project.status}
+                                    </span>
+                                </div>
+
+                                <h3 className="font-bold text-lg text-slate-800 mb-2 group-hover:text-blue-600 transition">{project.name}</h3>
+                                <p className="text-sm text-slate-500 mb-4 line-clamp-2">{project.description || 'No description provided.'}</p>
+
+                                <div className="mt-auto flex items-center justify-between pt-4 border-t border-slate-100">
+                                    <span className="text-xs text-slate-400">
+                                        Created {new Date(project.createdAt).toLocaleDateString()}
+                                    </span>
+                                    <span className="text-sm font-medium text-blue-600 group-hover:translate-x-1 transition">
+                                        View Details →
+                                    </span>
+                                </div>
+                            </div>
+                        </Link>
+                    )
                 ))}
 
                 {projects.length === 0 && (

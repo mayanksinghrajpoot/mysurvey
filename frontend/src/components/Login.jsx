@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
@@ -6,24 +6,26 @@ import { useAuth } from '../context/AuthContext';
 const img = 'https://images.unsplash.com/photo-1761839258753-85d8eecbbc29?q=80&w=2070&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDF8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D';
 
 const Login = () => {
-    const { login } = useAuth();
+    const { login, user, loading } = useAuth();
     const [isRegistering, setIsRegistering] = useState(false);
     const [name, setName] = useState('New Organization');
     const [username, setUsername] = useState('admin');
     const [password, setPassword] = useState('password');
     const [role, setRole] = useState('ADMIN');
 
-    // For registration: we need Parent ID? 
-    // Actually, registration is usually PUBLIC for new Tenants (Admins).
-    // But currently backend 'register' creates a User.
-    // If I register as ADMIN, I am a new Organization.
-    // If I register as NGO/PM, I need a parent?
-    // Let's assume Public Registration = New Organization (ADMIN) for now.
-    // Or we disable registration for non-Admins here?
-
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const navigate = useNavigate();
+
+    // Redirect if already logged in
+    useEffect(() => {
+        if (!loading && user) {
+            if (user.role === 'SUPER_ADMIN') navigate('/super-admin');
+            else if (user.role === 'ADMIN') navigate('/admin');
+            else if (user.role === 'PROJECT_MANAGER') navigate('/pm');
+            else navigate('/ngo');
+        }
+    }, [user, loading, navigate]);
 
     const handleAuth = async (e) => {
         e.preventDefault();

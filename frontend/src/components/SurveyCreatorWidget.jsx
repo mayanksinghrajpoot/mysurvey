@@ -139,6 +139,30 @@ const SurveyCreatorWidget = () => {
                     </div>
                 </div>
             </nav>
+
+            {/* Context Bar */}
+            <div className="bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between">
+                <div className="flex items-center text-sm text-slate-600">
+                    <span className="mr-2">Creating Survey for:</span>
+                    {projectId ? (
+                        <span className="font-bold text-blue-600 flex items-center">
+                            📁 {projects.find(p => p.id === projectId)?.name || 'Project ' + projectId}
+                        </span>
+                    ) : (
+                        <span className="font-bold text-purple-600 flex items-center">
+                            🏢 Entire Organization (Global)
+                        </span>
+                    )}
+                </div>
+                {user?.role !== 'PROJECT_MANAGER' && (
+                    <button
+                        onClick={() => { fetchProjects(); setShowProjectModal(true); }}
+                        className="text-xs text-blue-600 hover:text-blue-800 underline"
+                    >
+                        Change Context
+                    </button>
+                )}
+            </div>
             <div className="flex-1 relative h-screen">
                 <SurveyCreatorComponent creator={creator} />
             </div>

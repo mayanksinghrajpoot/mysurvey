@@ -8,4 +8,7 @@ public interface UtilizationRepository extends MongoRepository<Utilization, Stri
     List<Utilization> findByRfpId(String rfpId);
 
     List<Utilization> findByNgoId(String ngoId);
+
+    // Bulk fetch for Dashboard
+    List<Utilization> findByRfpIdIn(List<String> rfpIds);
 }

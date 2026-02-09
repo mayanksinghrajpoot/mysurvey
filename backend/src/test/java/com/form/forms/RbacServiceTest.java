@@ -11,6 +11,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
 import java.util.Optional;
 
@@ -26,6 +27,9 @@ class RbacServiceTest {
 
     @Mock
     private JwtTokenProvider tokenProvider;
+
+    @Mock
+    private PasswordEncoder passwordEncoder;
 
     @InjectMocks
     private AuthService authService;
@@ -59,6 +63,7 @@ class RbacServiceTest {
             u.setId("new-admin-id");
             return u;
         });
+        when(passwordEncoder.encode(any(String.class))).thenReturn("encodedPass");
 
         User created = authService.register("New Org", "org_admin", "pass", Role.ADMIN, null);
 
@@ -79,6 +84,7 @@ class RbacServiceTest {
     void testAdminCreatesPM_Success() {
         when(userRepository.findById("admin-1")).thenReturn(Optional.of(admin));
         when(userRepository.save(any(User.class))).thenAnswer(i -> i.getArguments()[0]);
+        when(passwordEncoder.encode(any(String.class))).thenReturn("encodedPass");
 
         User created = authService.register("New PM", "newpm", "pass", Role.PROJECT_MANAGER, "admin-1");
 

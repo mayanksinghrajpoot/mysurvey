@@ -17,11 +17,13 @@ const NgoDashboard = () => {
     const [projects, setProjects] = useState([]); // Derived from surveys
     const [rfqMap, setRfqMap] = useState({}); // projectId -> rfq
     const [selectedRfq, setSelectedRfq] = useState(null); // For viewing RFPs
-    const [rfps, setRfps] = useState([]);
+    const [allRfps, setAllRfps] = useState([]); // Cache all RFPs
+    const [rfps, setRfps] = useState([]); // Filtered view
     const [activeRfp, setActiveRfp] = useState(null); // For viewing Expenses
 
     // Expense Data
-    const [expenses, setExpenses] = useState([]);
+    const [allExpenses, setAllExpenses] = useState([]); // Cache all expenses
+    const [expenses, setExpenses] = useState([]); // Filtered view
     const [showAddExpense, setShowAddExpense] = useState(false);
     const [expenseForm, setExpenseForm] = useState({ title: '', amount: '', proofUrl: '', customData: {} });
 
@@ -38,21 +40,28 @@ const NgoDashboard = () => {
     const fetchAssignedSurveys = async () => {
         setLoading(true);
         try {
-            const res = await api.get('/surveys');
-            setSurveys(res.data);
+            const res = await api.get(`/dashboard/ngo/summary?ngoId=${user.id}`);
+            const data = res.data;
 
-            const uniqueProjectIds = [...new Set(res.data.map(s => s.projectId))];
-            const rfqs = {};
-            for (const pid of uniqueProjectIds) {
-                try {
-                    const rfqRes = await api.get(`/rfqs/my-rfq?projectId=${pid}&ngoId=${user.id}`);
-                    if (rfqRes.status === 200) rfqs[pid] = rfqRes.data;
-                } catch (e) { }
+            setSurveys(data.surveys || []);
+            setProjects([...data.projectIds] || []);
+            setRfqMap(data.rfqMap || {});
+            setAllRfps(data.rfps || []);
+            setAllExpenses(data.expenses || []);
+
+            // Re-apply filters if views are active
+            if (selectedRfq) {
+                const currentRfps = (data.rfps || []).filter(r => r.rfqId === selectedRfq.id);
+                setRfps(currentRfps);
             }
-            setRfqMap(rfqs);
-            setProjects(uniqueProjectIds);
+            if (activeRfp) {
+                const currentExpenses = (data.expenses || []).filter(e => e.rfpId === activeRfp.id);
+                setExpenses(currentExpenses);
+            }
+
         } catch (err) {
             console.error(err);
+            toast.error("Failed to load dashboard");
         } finally {
             setLoading(false);
         }
@@ -90,10 +99,8 @@ const NgoDashboard = () => {
 
     const handleViewRfq = async (rfq) => {
         setSelectedRfq(rfq);
-        try {
-            const res = await api.get(`/rfps/rfq/${rfq.id}`);
-            setRfps(res.data);
-        } catch (err) { console.error(err); }
+        // Optimize: verify if allRfps are fresh, currently assuming fetchAssignedSurveys keeps them fresh
+        setRfps(allRfps.filter(r => r.rfqId === rfq.id));
     };
 
     // --- RFP Logic ---
@@ -107,7 +114,9 @@ const NgoDashboard = () => {
             });
             toast.success("Milestone Request (RFP) Submitted!");
             setShowCreateRfp(false);
-            handleViewRfq(selectedRfq);
+            // Reload data to get the new RFP
+            await fetchAssignedSurveys();
+            // View update handled in fetchAssignedSurveys via selectedRfq check
         } catch (err) {
             toast.error(err.response?.data?.error || "Failed to submit RFP");
         }
@@ -116,10 +125,7 @@ const NgoDashboard = () => {
     // --- Expense Logic ---
     const handleViewExpenses = async (rfp) => {
         setActiveRfp(rfp);
-        try {
-            const res = await api.get(`/utilizations/rfp/${rfp.id}`);
-            setExpenses(res.data);
-        } catch (e) { console.error(e); }
+        setExpenses(allExpenses.filter(e => e.rfpId === rfp.id));
     };
 
     const handleAddExpense = async () => {
@@ -135,7 +141,8 @@ const NgoDashboard = () => {
             toast.success("Expense Report Submitted!");
             setShowAddExpense(false);
             setExpenseForm({ title: '', amount: '', proofUrl: '', customData: {} });
-            handleViewExpenses(activeRfp);
+            // Reload data to get new expense
+            await fetchAssignedSurveys();
         } catch (err) {
             toast.error(err.response?.data?.error || "Failed to add expense");
         }
@@ -181,13 +188,13 @@ const NgoDashboard = () => {
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {/* Tabs */}
                 <div className="flex space-x-4 mb-6 border-b border-slate-200 overflow-x-auto">
-                    {['surveys', 'funding', 'operations'].map(tab => (
+                    {['surveys', 'funding', 'operations', 'history'].map(tab => (
                         <button
                             key={tab}
                             onClick={() => { setActiveTab(tab); setSelectedSurvey(null); setSelectedRfq(null); setActiveRfp(null); }}
                             className={`pb-2 px-3 text-sm font-medium capitalize whitespace-nowrap ${activeTab === tab ? 'border-b-2 border-teal-600 text-teal-700' : 'text-slate-500 hover:text-slate-800'}`}
                         >
-                            {tab === 'funding' ? 'Funding & Budget' : tab === 'operations' ? 'Operations / Expenses' : 'Assigned Surveys'}
+                            {tab === 'funding' ? 'Funding & Budget' : tab === 'operations' ? 'Operations / Expenses' : tab === 'history' ? 'History / Logs' : 'Assigned Surveys'}
                         </button>
                     ))}
                 </div>
@@ -212,6 +219,15 @@ const NgoDashboard = () => {
                                 >
                                     Start Survey Collection
                                 </a>
+
+                                <div className="mt-6">
+                                    <Link
+                                        to={`/surveys/${selectedSurvey.id}/responses`}
+                                        className="inline-flex items-center text-blue-600 hover:text-blue-800 font-medium"
+                                    >
+                                        <span className="mr-2">📊</span> View My Responses
+                                    </Link>
+                                </div>
                             </div>
                         </div>
                     ) : (
@@ -259,7 +275,7 @@ const NgoDashboard = () => {
                                         <p className="text-slate-500 mt-1">{selectedRfq.details}</p>
                                     </div>
                                     <div className="text-right">
-                                        <div className="text-3xl font-bold text-teal-600">${selectedRfq.totalBudget?.toLocaleString()}</div>
+                                        <div className="text-3xl font-bold text-teal-600">₹{selectedRfq.totalBudget?.toLocaleString()}</div>
                                         <div className="mt-2">{renderRfqStatus(selectedRfq.status)}</div>
                                     </div>
                                 </div>
@@ -285,7 +301,7 @@ const NgoDashboard = () => {
                                         {rfps.map(r => (
                                             <tr key={r.id}>
                                                 <td className="px-6 py-4 font-medium text-slate-900">{r.title}</td>
-                                                <td className="px-6 py-4 text-slate-600">${r.amount?.toLocaleString()}</td>
+                                                <td className="px-6 py-4 text-slate-600">₹{r.amount?.toLocaleString()}</td>
                                                 <td className="px-6 py-4">
                                                     {r.status === 'PENDING_PM' && <span className="bg-orange-100 text-orange-800 px-2 py-1 rounded text-xs">Waiting PM</span>}
                                                     {r.status === 'PENDING_ADMIN' && <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">Waiting Admin</span>}
@@ -348,7 +364,7 @@ const NgoDashboard = () => {
                                             });
                                         }}>
                                             <h3 className="font-bold text-lg text-slate-800">{rfq.title}</h3>
-                                            <p className="text-sm text-slate-500 mt-1">Budget: ${rfq.totalBudget?.toLocaleString()}</p>
+                                            <p className="text-sm text-slate-500 mt-1">Budget: ₹{rfq.totalBudget?.toLocaleString()}</p>
                                             <div className="mt-4 text-blue-600 text-sm font-medium">Select Milestone →</div>
                                         </div>
                                     )
@@ -363,7 +379,7 @@ const NgoDashboard = () => {
 
                             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                                 <h2 className="text-2xl font-bold text-slate-800">{activeRfp.title} (Released)</h2>
-                                <p className="text-slate-500 mt-1">Total Released Amount: <span className="font-bold text-emerald-600">${activeRfp.amount?.toLocaleString()}</span></p>
+                                <p className="text-slate-500 mt-1">Total Released Amount: <span className="font-bold text-emerald-600">₹{activeRfp.amount?.toLocaleString()}</span></p>
                             </div>
 
                             <div className="flex justify-between items-center mt-6">
@@ -386,7 +402,7 @@ const NgoDashboard = () => {
                                         {expenses.map(exp => (
                                             <tr key={exp.id}>
                                                 <td className="px-6 py-4 font-medium text-slate-900">{exp.title}</td>
-                                                <td className="px-6 py-4 text-slate-600">${exp.amount?.toLocaleString()}</td>
+                                                <td className="px-6 py-4 text-slate-600">₹{exp.amount?.toLocaleString()}</td>
                                                 <td className="px-6 py-4">
                                                     {exp.status === 'SUBMITTED' && <span className="bg-yellow-100 text-yellow-800 px-2 py-1 rounded text-xs">Submitted</span>}
                                                     {exp.status === 'VERIFIED' && <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">Verified</span>}
@@ -398,7 +414,7 @@ const NgoDashboard = () => {
                                     <tfoot className="bg-slate-50">
                                         <tr>
                                             <td className="px-6 py-4 font-bold text-slate-700 text-right">Total Utilized:</td>
-                                            <td className="px-6 py-4 font-bold text-slate-900">${expenses.reduce((s, e) => s + e.amount, 0).toLocaleString()}</td>
+                                            <td className="px-6 py-4 font-bold text-slate-900">₹{expenses.reduce((s, e) => s + e.amount, 0).toLocaleString()}</td>
                                             <td></td>
                                         </tr>
                                     </tfoot>
@@ -421,13 +437,76 @@ const NgoDashboard = () => {
                                     onClick={() => r.status === 'APPROVED' && handleViewExpenses(r)}
                                 >
                                     <h3 className="font-bold text-slate-800">{r.title}</h3>
-                                    <p className="text-sm text-slate-500">${r.amount?.toLocaleString()}</p>
+                                    <p className="text-sm text-slate-500">₹{r.amount?.toLocaleString()}</p>
                                     <div className={`mt-2 text-xs font-bold ${r.status === 'APPROVED' ? 'text-green-600' : 'text-slate-400'}`}>
                                         {r.status === 'APPROVED' ? 'Available for Utilization →' : r.status}
                                     </div>
                                 </div>
                             ))}
                             {rfps.length === 0 && <div className="text-slate-400">No milestones found.</div>}
+                        </div>
+                    </div>
+                )}
+
+                {/* History Tab */}
+                {activeTab === 'history' && (
+                    <div className="animate-fade-in-up space-y-8">
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-800 mb-4">Milestone History</h2>
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <table className="min-w-full divide-y divide-slate-100">
+                                    <thead className="bg-slate-50">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Milestone</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Amount</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Date</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-slate-100">
+                                        {allRfps.map(r => (
+                                            <tr key={r.id}>
+                                                <td className="px-6 py-4 font-medium text-slate-900">{r.title}</td>
+                                                <td className="px-6 py-4 text-slate-600">₹{r.amount?.toLocaleString()}</td>
+                                                <td className="px-6 py-4">{renderRfqStatus(r.status)}</td>
+                                                <td className="px-6 py-4 text-sm text-slate-500">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '-'}</td>
+                                            </tr>
+                                        ))}
+                                        {allRfps.length === 0 && <tr><td colSpan="4" className="px-6 py-6 text-center text-slate-400">No milestones found.</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h2 className="text-xl font-bold text-slate-800 mb-4">Expense History</h2>
+                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                <table className="min-w-full divide-y divide-slate-100">
+                                    <thead className="bg-slate-50">
+                                        <tr>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Expense</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Amount</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Status</th>
+                                            <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase">Proof</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="bg-white divide-y divide-slate-100">
+                                        {allExpenses.map(e => (
+                                            <tr key={e.id}>
+                                                <td className="px-6 py-4 font-medium text-slate-900">{e.title}</td>
+                                                <td className="px-6 py-4 text-slate-600">₹{e.amount?.toLocaleString()}</td>
+                                                <td className="px-6 py-4">
+                                                    {e.status === 'VERIFIED' && <span className="text-green-600 font-medium">Verified</span>}
+                                                    {e.status === 'REJECTED' && <span className="text-red-600 font-medium">Rejected</span>}
+                                                    {e.status === 'SUBMITTED' && <span className="text-yellow-600">Pending</span>}
+                                                </td>
+                                                <td className="px-6 py-4 text-sm text-blue-600 truncate max-w-xs "><a href={e.proofUrl} target="_blank" rel="noreferrer">{e.proofUrl}</a></td>
+                                            </tr>
+                                        ))}
+                                        {allExpenses.length === 0 && <tr><td colSpan="4" className="px-6 py-6 text-center text-slate-400">No expenses found.</td></tr>}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
                     </div>
                 )}
@@ -488,7 +567,7 @@ const NgoDashboard = () => {
                                     <div className="mt-4 p-3 bg-slate-50 rounded text-right">
                                         <span className="text-sm text-slate-500 mr-2">Total Contract Value:</span>
                                         <span className="font-bold text-slate-800">
-                                            ${rfqForm.budgetBreakdown.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0).toLocaleString()}
+                                            ₹{rfqForm.budgetBreakdown.reduce((sum, item) => sum + (parseFloat(item.amount) || 0), 0).toLocaleString()}
                                         </span>
                                     </div>
                                 </div>
@@ -509,8 +588,8 @@ const NgoDashboard = () => {
                             <h3 className="text-xl font-bold mb-4">Request Fund Release (RFP)</h3>
                             <div className="space-y-4">
                                 <input className="w-full border p-2 rounded" placeholder="Milestone Title" value={rfpForm.title} onChange={e => setRfpForm({ ...rfpForm, title: e.target.value })} />
-                                <input type="number" className="w-full border p-2 rounded" placeholder="Amount ($)" value={rfpForm.amount} onChange={e => setRfpForm({ ...rfpForm, amount: e.target.value })} />
-                                <p className="text-xs text-slate-500">Remaining Budget: ${(selectedRfq.totalBudget - rfps.reduce((acc, r) => acc + (r.status !== 'REJECTED' ? r.amount : 0), 0)).toLocaleString()}</p>
+                                <input type="number" className="w-full border p-2 rounded" placeholder="Amount (₹)" value={rfpForm.amount} onChange={e => setRfpForm({ ...rfpForm, amount: e.target.value })} />
+                                <p className="text-xs text-slate-500">Remaining Budget: ₹{(selectedRfq.totalBudget - rfps.reduce((acc, r) => acc + (r.status !== 'REJECTED' ? r.amount : 0), 0)).toLocaleString()}</p>
                                 <div className="flex justify-end space-x-3 mt-4">
                                     <button onClick={() => setShowCreateRfp(false)} className="text-slate-500">Cancel</button>
                                     <button onClick={handleCreateRFP} className="bg-green-600 text-white px-4 py-2 rounded">Submit</button>
@@ -527,7 +606,7 @@ const NgoDashboard = () => {
                             <h3 className="text-xl font-bold mb-4">Add Expense Report</h3>
                             <div className="space-y-4">
                                 <input className="w-full border p-2 rounded" placeholder="Expense Title / Vendor" value={expenseForm.title} onChange={e => setExpenseForm({ ...expenseForm, title: e.target.value })} />
-                                <input type="number" className="w-full border p-2 rounded" placeholder="Amount ($)" value={expenseForm.amount} onChange={e => setExpenseForm({ ...expenseForm, amount: e.target.value })} />
+                                <input type="number" className="w-full border p-2 rounded" placeholder="Amount (₹)" value={expenseForm.amount} onChange={e => setExpenseForm({ ...expenseForm, amount: e.target.value })} />
                                 <input className="w-full border p-2 rounded" placeholder="Proof URL (Optional)" value={expenseForm.proofUrl} onChange={e => setExpenseForm({ ...expenseForm, proofUrl: e.target.value })} />
 
                                 {/* Dynamic Fields based on RFQ Format */}

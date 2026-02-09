@@ -46,6 +46,7 @@ public class RFQController {
     }
 
     // PM: Approve
+    @SuppressWarnings("unchecked")
     @PutMapping("/{id}/approve-pm")
     public ResponseEntity<?> approveByPM(@PathVariable String id,
             @RequestBody(required = false) Map<String, Object> body) {

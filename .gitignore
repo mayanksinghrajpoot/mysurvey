@@ -52,10 +52,10 @@ build/
 
 # Environment / secrets
 .env
-application.properties
+# application.properties
 application.yml
 application-*.yml
-application-*.properties
+# application-*.properties
 
 # Certificates & keys
 *.key

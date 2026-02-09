@@ -25,13 +25,16 @@ public class ExcelService {
     private final SurveyResponseRepository responseRepository;
     private final SchemaValidator schemaValidator;
     private final AnalyticsService analyticsService;
+    private final com.form.forms.repository.UserRepository userRepository;
 
     public ExcelService(SurveyRepository surveyRepository, SurveyResponseRepository responseRepository,
-            SchemaValidator schemaValidator, AnalyticsService analyticsService) {
+            SchemaValidator schemaValidator, AnalyticsService analyticsService,
+            com.form.forms.repository.UserRepository userRepository) {
         this.surveyRepository = surveyRepository;
         this.responseRepository = responseRepository;
         this.schemaValidator = schemaValidator;
         this.analyticsService = analyticsService;
+        this.userRepository = userRepository;
     }
 
     // ==================================================================================
@@ -48,7 +51,36 @@ public class ExcelService {
             throw new RuntimeException("Access Denied");
         }
 
-        List<SurveyResponse> responses = responseRepository.findBySurveyId(surveyId);
+        // --- SECURITY ENHANCEMENT: Filter NGO Exports ---
+        List<SurveyResponse> responses;
+        com.form.forms.model.Role role = getCurrentUserRole();
+        if (role == com.form.forms.model.Role.NGO) {
+            String userId = getCurrentUserId();
+            if (userId != null) {
+                // Fetch filtered responses for NGO
+                // Using MongoTemplate or custom repository method would be cleaner,
+                // but here we can just filter in memory or fetch all and filter
+                // (Repository method preferred for performance)
+                // Let's assume responseRepository finds by surveyId and respondentId
+                // Or use stream filter here if list is small.
+                // Better: responses =
+                // responseRepository.findBySurveyIdAndRespondentId(surveyId, userId);
+                // I will add this method to repository or modify logic.
+                // Checking if method exists first?
+                // Let's use stream since findBySurveyIdAndRespondentId might not exist yet.
+                // Actually, let's just use stream filter for now, safe and simple.
+                List<SurveyResponse> allResponses = responseRepository.findBySurveyId(surveyId);
+                responses = allResponses.stream()
+                        .filter(r -> userId.equals(r.getRespondentId()))
+                        .collect(java.util.stream.Collectors.toList());
+            } else {
+                responses = new ArrayList<>();
+            }
+        } else {
+            // Project Managers and Admins see all for the survey (within Org scope enforced
+            // by repo/context)
+            responses = responseRepository.findBySurveyId(surveyId);
+        }
 
         try (Workbook workbook = new SXSSFWorkbook(100)) { // Keep 100 rows in memory, rest on disk
             Sheet sheet = workbook.createSheet("Responses");
@@ -97,6 +129,37 @@ public class ExcelService {
             workbook.write(out);
             return new ByteArrayInputStream(out.toByteArray());
         }
+    }
+
+    // Helper methods for Security Context (Adding these to ExcelService)
+    public com.form.forms.model.Role getCurrentUserRole() {
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (auth != null && auth.getAuthorities() != null) {
+            String roleName = auth.getAuthorities().stream()
+                    .findFirst()
+                    .map(a -> a.getAuthority().replace("ROLE_", ""))
+                    .orElse(null);
+            if (roleName != null) {
+                try {
+                    return com.form.forms.model.Role.valueOf(roleName);
+                } catch (IllegalArgumentException e) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    public String getCurrentUserId() {
+        org.springframework.security.core.Authentication auth = org.springframework.security.core.context.SecurityContextHolder
+                .getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated() && !"anonymousUser".equals(auth.getPrincipal())) {
+            return userRepository.findByUsername(auth.getName())
+                    .map(com.form.forms.model.User::getId)
+                    .orElse(null);
+        }
+        return null;
     }
 
     private void setCellValue(Cell cell, Object value) {

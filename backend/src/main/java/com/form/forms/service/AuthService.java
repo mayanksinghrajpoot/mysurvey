@@ -225,4 +225,35 @@ public class AuthService {
         return userRepository.findByUsername(username)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
+
+    public User updateUser(String id, String name, String username, Role role) {
+        User user = getUserById(id);
+
+        // Check if username is being changed and if it is available
+        if (!user.getUsername().equals(username)) {
+            if (userRepository.findByUsername(username).isPresent()) {
+                throw new BadRequestException("Username already exists");
+            }
+            user.setUsername(username);
+        }
+
+        user.setName(name);
+        // Only allow role change if not Super Admin? Or flexible?
+        // Let's allow role change for flexibility, assuming caller has rights.
+        if (role != null) {
+            user.setRole(role);
+        }
+
+        return userRepository.save(user);
+    }
+
+    public void deleteUser(String id) {
+        User user = getUserById(id);
+        // Prevent deleting self
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.getName().equals(user.getUsername())) {
+            throw new BadRequestException("Cannot delete yourself");
+        }
+        userRepository.delete(user);
+    }
 }

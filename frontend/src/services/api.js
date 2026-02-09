@@ -16,8 +16,11 @@ api.interceptors.request.use(
             config.headers.Authorization = `Bearer ${token}`;
         }
 
-        if (organizationId && config.headers['X-ORGANIZATION-ID'] === undefined) {
-            config.headers['X-ORGANIZATION-ID'] = organizationId;
+        if (organizationId || localStorage.getItem('impersonateTenantId')) {
+            const effectiveTenantId = localStorage.getItem('impersonateTenantId') || organizationId;
+            if (config.headers['X-ORGANIZATION-ID'] === undefined && effectiveTenantId) {
+                config.headers['X-ORGANIZATION-ID'] = effectiveTenantId;
+            }
         }
 
         return config;

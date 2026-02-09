@@ -92,4 +92,27 @@ public class AuthController {
         }
         return ResponseEntity.ok(Map.of("message", "Association updated"));
     }
+
+    @PutMapping("/users/{id}")
+    public ResponseEntity<?> updateUser(@PathVariable String id, @RequestBody Map<String, String> payload) {
+        String name = payload.get("name");
+        String username = payload.get("username");
+        String roleStr = payload.get("role");
+        Role role = null;
+        if (roleStr != null) {
+            try {
+                role = Role.valueOf(roleStr.toUpperCase());
+            } catch (IllegalArgumentException e) {
+                // Ignore invalid role or throw? Let's ignore and keep old role if invalid
+            }
+        }
+
+        return ResponseEntity.ok(authService.updateUser(id, name, username, role));
+    }
+
+    @DeleteMapping("/users/{id}")
+    public ResponseEntity<?> deleteUser(@PathVariable String id) {
+        authService.deleteUser(id);
+        return ResponseEntity.ok(Map.of("message", "User deleted successfully"));
+    }
 }

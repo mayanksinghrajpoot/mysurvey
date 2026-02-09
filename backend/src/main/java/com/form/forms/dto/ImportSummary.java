@@ -42,6 +42,27 @@ public class ImportSummary {
         this.failedCount += count;
     }
 
+    // Manual getters for serialization safety
+    public int getSuccessCount() {
+        return successCount;
+    }
+
+    public int getFailedCount() {
+        return failedCount;
+    }
+
+    public int getDuplicateCount() {
+        return duplicateCount;
+    }
+
+    public int getEmptyCount() {
+        return emptyCount;
+    }
+
+    public List<String> getErrors() {
+        return errors;
+    }
+
     // Manual setters/getters to ensure compilation
     public void setTotalRows(int totalRows) {
         this.totalRows = totalRows;

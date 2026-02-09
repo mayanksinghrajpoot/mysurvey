@@ -5,8 +5,9 @@ import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-toastify';
 import ConfirmationModal from '../ConfirmationModal';
 
-const ProjectDetailView = () => {
-    const { id } = useParams();
+const ProjectDetailView = ({ projectId }) => {
+    const { id: paramId } = useParams();
+    const id = projectId || paramId;
     const { user } = useAuth();
     const [project, setProject] = useState(null);
     const [surveys, setSurveys] = useState([]);
@@ -25,8 +26,10 @@ const ProjectDetailView = () => {
     });
 
     useEffect(() => {
-        fetchData();
-        if (isAdmin()) fetchPms();
+        if (id) {
+            fetchData();
+            if (isAdmin()) fetchPms();
+        }
     }, [id]);
 
     const isAdmin = () => user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';

@@ -11,4 +11,7 @@ public interface RFPRepository extends MongoRepository<RFP, String> {
 
     // List all RFPs submitted by an NGO (generic view)
     List<RFP> findByNgoId(String ngoId);
+
+    // Bulk fetch for Dashboard
+    List<RFP> findByRfqIdIn(List<String> rfqIds);
 }
