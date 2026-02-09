@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-toastify';
+import ConfirmationModal from '../ConfirmationModal';
 
 // Level 3: Survey List (Table) -> Survey Detail (Workbench)
 const PMDetailView = ({ pmId, pmName, isOwnView }) => {
@@ -131,6 +132,20 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
         }
     };
 
+    // --- UI Modals State ---
+    const [confirmModal, setConfirmModal] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: null,
+        isDanger: false
+    });
+
+    const closeConfirmModal = () => setConfirmModal({ ...confirmModal, isOpen: false });
+
+    // Details Modal
+    const [viewDetailsModal, setViewDetailsModal] = useState(null);
+
     // --- Operations Logic ---
     const handleVerifyExpense = async (id) => {
         try {
@@ -143,15 +158,23 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
         }
     };
 
-    const handleRejectExpense = async (id) => {
-        if (!window.confirm("Reject this expense?")) return;
-        try {
-            await api.put(`/utilizations/${id}/reject`);
-            toast.info("Expense Rejected");
-            setUtilizations(utilizations.map(u => u.id === id ? { ...u, status: 'REJECTED' } : u));
-        } catch (err) {
-            toast.error("Failed to reject");
-        }
+    const handleRejectExpense = (id) => {
+        setConfirmModal({
+            isOpen: true,
+            title: 'Reject Expense?',
+            message: 'Are you sure you want to reject this expense claim?',
+            isDanger: true,
+            confirmText: 'Reject Expense',
+            onConfirm: async () => {
+                try {
+                    await api.put(`/utilizations/${id}/reject`);
+                    toast.info("Expense Rejected");
+                    setUtilizations(utilizations.map(u => u.id === id ? { ...u, status: 'REJECTED' } : u));
+                } catch (err) {
+                    toast.error("Failed to reject");
+                }
+            }
+        });
     };
 
     // --- Render Helpers ---
@@ -477,6 +500,7 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                                         <td className="px-6 py-4 text-slate-700">₹{u.amount?.toLocaleString()}</td>
                                         <td className="px-6 py-4 text-sm text-blue-600 truncate max-w-xs">{u.proofUrl || '-'}</td>
                                         <td className="px-6 py-4 text-right space-x-2">
+                                            <button onClick={() => setViewDetailsModal(u)} className="text-blue-600 hover:text-blue-800 text-sm font-medium">View</button>
                                             <button onClick={() => handleRejectExpense(u.id)} className="text-red-600 hover:text-red-800 text-sm font-medium">Reject</button>
                                             <button onClick={() => handleVerifyExpense(u.id)} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 text-sm">Verify</button>
                                         </td>
@@ -517,7 +541,12 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                                             {r.status === 'PENDING_ADMIN' && <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">Waiting Admin</span>}
                                             {r.status === 'REJECTED' && <span className="bg-red-100 text-red-800 px-2 py-1 rounded text-xs">Rejected</span>}
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-slate-500">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '-'}</td>
+                                        <td className="px-6 py-4 text-sm text-slate-500">
+                                            <div className="flex justify-between items-center">
+                                                <span>{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '-'}</span>
+                                                <button onClick={() => setViewDetailsModal(r)} className="text-blue-600 hover:text-blue-800 text-xs font-bold">VIEW DETAILS</button>
+                                            </div>
+                                        </td>
                                     </tr>
                                 ))}
                                 {rfps.length === 0 && <tr><td colSpan="4" className="px-6 py-8 text-center text-slate-400">No milestones found.</td></tr>}
@@ -543,7 +572,7 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                                     <tr key={u.id}>
                                         <td className="px-6 py-4 font-medium text-slate-900">{u.title}</td>
                                         <td className="px-6 py-4 text-slate-700">₹{u.amount?.toLocaleString()}</td>
-                                        <td className="px-6 py-4 text-sm text-blue-600 truncate max-w-xs">{u.proofUrl || '-'}</td>
+                                        <td className="px-6 py-4 text-sm text-blue-600 truncate max-w-xs cursor-pointer hover:underline" onClick={() => setViewDetailsModal(u)}>{u.proofUrl || '-'}</td>
                                         <td className="px-6 py-4">
                                             {u.status === 'VERIFIED' && <span className="text-green-600 font-medium">Verified</span>}
                                             {u.status === 'REJECTED' && <span className="text-red-600 font-medium">Rejected</span>}
@@ -559,6 +588,55 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                     </div>
                 </div>
             )}
+
+            {/* Details Modal */}
+            {viewDetailsModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                    <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 animate-fade-in-up">
+                        <h3 className="text-xl font-bold text-slate-800 mb-4">Details</h3>
+
+                        {/* Standard Fields */}
+                        <div className="mb-4">
+                            <div className="text-sm text-slate-500 mb-1">Title / Description</div>
+                            <div className="font-medium">{viewDetailsModal.title || viewDetailsModal.name}</div>
+                        </div>
+
+                        {/* Custom Data */}
+                        {viewDetailsModal.customData && Object.keys(viewDetailsModal.customData).length > 0 ? (
+                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                                <h4 className="text-sm font-bold text-slate-700 uppercase mb-2">Additional Information</h4>
+                                <div className="space-y-2">
+                                    {Object.entries(viewDetailsModal.customData).map(([key, value]) => (
+                                        <div key={key} className="flex flex-col border-b border-slate-200 last:border-0 pb-2 last:pb-0">
+                                            <span className="text-xs text-slate-500 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                                            <span className="text-sm text-slate-800 font-medium">
+                                                {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <p className="text-sm text-slate-400 italic">No additional custom details provided.</p>
+                        )}
+
+                        <div className="mt-6 flex justify-end">
+                            <button onClick={() => setViewDetailsModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 rounded hover:bg-slate-200">Close</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={closeConfirmModal}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmText={confirmModal.confirmText || "Confirm"}
+                isDanger={confirmModal.isDanger}
+            />
         </div>
     );
 };

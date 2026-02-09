@@ -22,4 +22,7 @@ public interface RFQRepository extends MongoRepository<RFQ, String> {
 
     // Generic list by NGO
     List<RFQ> findByNgoId(String ngoId);
+
+    // For PM Dashboard Optimization
+    List<RFQ> findByProjectIdInAndStatus(List<String> projectIds, RFQStatus status);
 }

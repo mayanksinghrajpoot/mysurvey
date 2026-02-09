@@ -243,9 +243,34 @@ public class SurveyService {
 
     public Survey getSurvey(String id) {
         String organizationId = OrganizationContext.getOrganizationId();
-        return surveyRepository.findById(id)
+        Survey survey = surveyRepository.findById(id)
                 .filter(s -> organizationId == null || s.getOrganizationId().equals(organizationId))
                 .orElseThrow(() -> new RuntimeException("Survey not found or access denied"));
+
+        // Security Check for PM
+        Role role = getCurrentUserRole();
+        if (role == Role.PROJECT_MANAGER) {
+            String userId = getCurrentUserId();
+            if (userId != null) {
+                boolean hasAccess = false;
+                // 1. Owner (Created by me)
+                if (userId.equals(survey.getCreatedBy())) {
+                    hasAccess = true;
+                }
+
+                // 2. Project Manager (Assigned to Project)
+                if (!hasAccess && survey.getProjectId() != null) {
+                    hasAccess = projectRepository.findById(survey.getProjectId())
+                            .map(p -> p.getProjectManagerIds() != null && p.getProjectManagerIds().contains(userId))
+                            .orElse(false);
+                }
+
+                if (!hasAccess) {
+                    throw new RuntimeException("Access Denied: You do not have permission to view this survey.");
+                }
+            }
+        }
+        return survey;
     }
 
     public Survey getSurveyForRunner(String id) {
@@ -324,19 +349,43 @@ public class SurveyService {
                 .orElseThrow(() -> new RuntimeException("Survey not found or access denied"));
 
         Role role = getCurrentUserRole();
+        String userId = getCurrentUserId();
+
+        // ACL Logic
+        if (role == Role.NGO) {
+            if (userId != null) {
+                // Check if NGO is assigned to this survey?
+                // Currently just checking if they are the respondent for THEIR responses.
+                // But this method returns LIST of responses.
+                // So NGO sees only their own responses.
+            } else {
+                return List.of();
+            }
+        } else if (role == Role.PROJECT_MANAGER) {
+            if (userId != null) {
+                boolean hasAccess = false;
+                // 1. Owner
+                if (userId.equals(survey.getCreatedBy()))
+                    hasAccess = true;
+                // 2. Project Manager
+                if (!hasAccess && survey.getProjectId() != null) {
+                    hasAccess = projectRepository.findById(survey.getProjectId())
+                            .map(p -> p.getProjectManagerIds() != null && p.getProjectManagerIds().contains(userId))
+                            .orElse(false);
+                }
+                if (!hasAccess) {
+                    throw new RuntimeException(
+                            "Access Denied: You do not have permission to view responses for this survey.");
+                }
+            }
+        }
 
         // Build Dynamic Query
         Query query = new Query();
         query.addCriteria(Criteria.where("surveyId").is(surveyId));
 
-        // ACL Logic
-        if (role == Role.NGO) {
-            String userId = getCurrentUserId();
-            if (userId != null) {
-                query.addCriteria(Criteria.where("respondentId").is(userId));
-            } else {
-                return List.of();
-            }
+        if (role == Role.NGO && userId != null) {
+            query.addCriteria(Criteria.where("respondentId").is(userId));
         }
 
         // Drill-down Filter

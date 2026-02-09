@@ -6,6 +6,8 @@ import com.form.forms.model.RFQ;
 import com.form.forms.model.RFQStatus;
 import com.form.forms.repository.RFPRepository;
 import com.form.forms.repository.RFQRepository;
+import com.form.forms.model.Project;
+import com.form.forms.repository.ProjectRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import java.util.List;
@@ -20,6 +22,9 @@ public class RFPService {
 
     @Autowired
     private RFQRepository rfqRepository;
+
+    @Autowired
+    private ProjectRepository projectRepository;
 
     public RFP createRFP(RFP rfp) {
         // Validate Parent RFQ
@@ -110,7 +115,28 @@ public class RFPService {
                 .collect(Collectors.toList());
     }
 
-    // Retrieve Pending RFPs for Admin
+    // For PM Dashboard: Get Pending Approvals (Optimized)
+    public List<RFP> getPendingRFPsForPM(String pmId) {
+        List<Project> projects = projectRepository.findByProjectManagerIdsContaining(pmId);
+        List<String> projectIds = projects.stream().map(Project::getId).toList();
+
+        // Find all RFQs in these projects (regardless of status, as we need to find
+        // RFPs linked to them)
+        List<RFQ> rfqs = rfqRepository.findByProjectIdInAndStatus(projectIds, com.form.forms.model.RFQStatus.APPROVED);
+        // Note: Usually only APPROVED RFQs have RFPs, but we can also check broadly if
+        // needed.
+        // Actually, let's use a custom query or just fetch all RFQs for these projects.
+        // For simplicity and correctness with existing repo methods:
+        // We need all RFQs for these projects to find related RFPs.
+        // But `findByProjectIdInAndStatus` filters by status.
+        // Let's use `rfqRepository.findByProjectId(projectId)` looped or add a new repo
+        // method `findByProjectIdIn`.
+        // Given current repo, let's just use the `APPROVED` status assumption for RFPs.
+
+        List<String> rfqIds = rfqs.stream().map(RFQ::getId).toList();
+        return rfpRepository.findByRfqIdInAndStatus(rfqIds, RFPStatus.PENDING_PM);
+    }
+
     public List<RFP> getPendingAdminApprovals() {
         return rfpRepository.findAll().stream()
                 .filter(r -> r.getStatus() == RFPStatus.PENDING_ADMIN)

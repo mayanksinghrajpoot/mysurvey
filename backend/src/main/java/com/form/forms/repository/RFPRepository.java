@@ -14,4 +14,7 @@ public interface RFPRepository extends MongoRepository<RFP, String> {
 
     // Bulk fetch for Dashboard
     List<RFP> findByRfqIdIn(List<String> rfqIds);
+
+    // For PM Dashboard Optimization
+    List<RFP> findByRfqIdInAndStatus(List<String> rfqIds, com.form.forms.model.RFPStatus status);
 }

@@ -36,6 +36,12 @@ public class RFPController {
         return rfpService.getPendingRFPsForProject(projectId);
     }
 
+    // PM: Get Pending RFPs (Optimized Global)
+    @GetMapping("/pending-pm")
+    public List<RFP> getPendingRfpsForPm(@RequestParam String pmId) {
+        return rfpService.getPendingRFPsForPM(pmId);
+    }
+
     // PM: Approve
     @PutMapping("/{id}/approve-pm")
     public ResponseEntity<?> approveByPM(@PathVariable String id) {

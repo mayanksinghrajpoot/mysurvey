@@ -25,6 +25,9 @@ public class RFQ {
     private String details;
     private Double totalBudget;
 
+    // Dynamic Form Data
+    private java.util.Map<String, Object> customData;
+
     // V2: Multi-Year Contract Breakdown
     private List<BudgetBreakdown> budgetBreakdown;
 
@@ -222,5 +225,13 @@ public class RFQ {
 
     public void setExpenseFormat(List<CustomField> expenseFormat) {
         this.expenseFormat = expenseFormat;
+    }
+
+    public java.util.Map<String, Object> getCustomData() {
+        return customData;
+    }
+
+    public void setCustomData(java.util.Map<String, Object> customData) {
+        this.customData = customData;
     }
 }

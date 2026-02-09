@@ -31,7 +31,23 @@ public class ProjectController {
 
     @GetMapping("/{id}/surveys")
     public ResponseEntity<List<com.form.forms.model.Survey>> getProjectSurveys(@PathVariable String id) {
-        // TODO: specific security checks?
+        User user = getCurrentUser();
+        Project project = projectService.getProjectById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found"));
+
+        // Security Check
+        if (user != null && user.getRole() == com.form.forms.model.Role.PROJECT_MANAGER) {
+            String organizationId = user.getOrganizationId();
+            // Check Org
+            if (!project.getOrganizationId().equals(organizationId)) {
+                throw new AccessDeniedException("Access Denied: Project belongs to another organization");
+            }
+            // Check Assignment
+            if (project.getProjectManagerIds() == null || !project.getProjectManagerIds().contains(user.getId())) {
+                throw new AccessDeniedException("Access Denied: You are not assigned to this project");
+            }
+        }
+
         return ResponseEntity.ok(surveyRepository.findByProjectId(id));
     }
 
@@ -55,14 +71,20 @@ public class ProjectController {
     }
 
     @GetMapping
-    public ResponseEntity<List<Project>> getProjects(@RequestHeader("X-ORGANIZATION-ID") String organizationId) {
+    public ResponseEntity<List<Project>> getProjects(
+            @RequestHeader(value = "X-ORGANIZATION-ID", required = false) String organizationIdHeader) {
         User user = getCurrentUser();
         if (user == null) {
             throw new BadCredentialsException("User not authenticated");
         }
 
+        String organizationId = organizationIdHeader;
+        if (organizationId == null) {
+            organizationId = user.getOrganizationId();
+        }
+
         // If specific logic for PM vs Admin
-        if (user.getRole().name().equals("PROJECT_MANAGER")) {
+        if (user.getRole() == com.form.forms.model.Role.PROJECT_MANAGER) {
             return ResponseEntity.ok(projectService.getProjectsForPM(organizationId, user.getId()));
         }
 
@@ -72,9 +94,24 @@ public class ProjectController {
 
     @GetMapping("/{id}")
     public ResponseEntity<Project> getProject(@PathVariable String id) {
-        return projectService.getProjectById(id)
-                .map(ResponseEntity::ok)
+        User user = getCurrentUser();
+        Project project = projectService.getProjectById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found with id: " + id));
+
+        // Security Check
+        if (user != null && user.getRole() == com.form.forms.model.Role.PROJECT_MANAGER) {
+            String organizationId = user.getOrganizationId();
+            // Check Org
+            if (!project.getOrganizationId().equals(organizationId)) {
+                throw new AccessDeniedException("Access Denied: Project belongs to another organization");
+            }
+            // Check Assignment
+            if (project.getProjectManagerIds() == null || !project.getProjectManagerIds().contains(user.getId())) {
+                throw new AccessDeniedException("Access Denied: You are not assigned to this project");
+            }
+        }
+
+        return ResponseEntity.ok(project);
     }
 
     @PostMapping

@@ -39,6 +39,12 @@ public class RFQController {
         return rfqService.getRFQsByProject(projectId);
     }
 
+    // PM: Get Pending RFQs (Optimized)
+    @GetMapping("/pending-pm")
+    public List<RFQ> getPendingRfqsForPm(@RequestParam String pmId) {
+        return rfqService.getPendingRFQsForPM(pmId);
+    }
+
     // PM/Admin: Get specific RFQ
     @GetMapping("/{id}")
     public ResponseEntity<RFQ> getRfqById(@PathVariable String id) {

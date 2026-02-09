@@ -8,4 +8,6 @@ public interface ProjectRepository extends MongoRepository<Project, String> {
     List<Project> findByOrganizationId(String organizationId);
 
     List<Project> findByOrganizationIdAndProjectManagerIdsContaining(String organizationId, String projectManagerId);
+
+    List<Project> findByProjectManagerIdsContaining(String projectManagerId);
 }

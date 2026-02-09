@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import PMDetailView from './views/PMDetailView';
 import api from '../services/api';
+import PromptModal from './PromptModal';
 import { toast } from 'react-toastify';
 
 const ProjectManagerDashboard = () => {
@@ -23,22 +24,13 @@ const ProjectManagerDashboard = () => {
     const fetchPendingApprovals = async () => {
         setLoading(true);
         try {
-            // 1. Get My Projects
-            const projRes = await api.get('/projects');
-            const myProjects = projRes.data;
+            // 1. Get Pending RFQs (Single Call)
+            const rfqRes = await api.get(`/rfqs/pending-pm?pmId=${pmId}`);
+            setPendingRfqs(rfqRes.data);
 
-            // 2. Get RFQs for each project
-            const rfqPromises = myProjects.map(p => api.get(`/rfqs/project/${p.id}`));
-            const rfqResponses = await Promise.all(rfqPromises);
-            const allRfqs = rfqResponses.flatMap(r => r.data).filter(r => r.status === 'PENDING_PM');
-
-            // 3. Get RFPs for each project
-            const rfpPromises = myProjects.map(p => api.get(`/rfps/pending-pm/${p.id}`));
-            const rfpResponses = await Promise.all(rfpPromises);
-            const allRfps = rfpResponses.flatMap(r => r.data);
-
-            setPendingRfqs(allRfqs);
-            setPendingRfps(allRfps);
+            // 2. Get Pending RFPs (Single Call)
+            const rfpRes = await api.get(`/rfps/pending-pm?pmId=${pmId}`);
+            setPendingRfps(rfpRes.data);
         } catch (err) {
             console.error(err);
             toast.error("Failed to load approvals.");
@@ -56,6 +48,17 @@ const ProjectManagerDashboard = () => {
             toast.error(err.response?.data?.error || "Approval failed");
         }
     };
+    const handleApproveRfp = async (id) => {
+        try {
+            await api.put(`/rfps/${id}/approve-pm`);
+            toast.success("Milestone Approved!");
+            fetchPendingApprovals();
+        } catch (err) {
+            toast.error(err.response?.data?.error || "Approval failed");
+        }
+    };
+
+    const [viewDetailsModal, setViewDetailsModal] = useState(null);
 
     // Schema Editor State
     const [approvalModalOpen, setApprovalModalOpen] = useState(false);
@@ -104,38 +107,53 @@ const ProjectManagerDashboard = () => {
         }
     };
 
-    const handleRejectRfq = async (id) => {
-        const reason = prompt("Enter rejection reason:");
-        if (!reason) return;
-        try {
-            await api.put(`/rfqs/${id}/reject`, { reason });
-            toast.info("RFQ Rejected.");
-            fetchPendingApprovals();
-        } catch (err) {
-            toast.error(err.response?.data?.error || "Rejection failed");
-        }
+    // Prompt Modal State
+    const [promptModal, setPromptModal] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: null,
+        isDanger: false
+    });
+
+    const closePromptModal = () => {
+        setPromptModal({ ...promptModal, isOpen: false });
     };
 
-    const handleApproveRfp = async (id) => {
-        try {
-            await api.put(`/rfps/${id}/approve-pm`);
-            toast.success("Milestone Approved!");
-            fetchPendingApprovals();
-        } catch (err) {
-            toast.error(err.response?.data?.error || "Approval failed");
-        }
+    const handleRejectRfq = (id) => {
+        setPromptModal({
+            isOpen: true,
+            title: 'Reject RFQ',
+            message: 'Please provide a reason for rejecting this Budget Request.',
+            isDanger: true,
+            onConfirm: async (reason) => {
+                try {
+                    await api.put(`/rfqs/${id}/reject`, { reason });
+                    toast.info("RFQ Rejected.");
+                    fetchPendingApprovals();
+                } catch (err) {
+                    toast.error(err.response?.data?.error || "Rejection failed");
+                }
+            }
+        });
     };
 
-    const handleRejectRfp = async (id) => {
-        const reason = prompt("Enter rejection reason:");
-        if (!reason) return;
-        try {
-            await api.put(`/rfps/${id}/reject`, { reason });
-            toast.info("Milestone Rejected.");
-            fetchPendingApprovals();
-        } catch (err) {
-            toast.error(err.response?.data?.error || "Rejection failed");
-        }
+    const handleRejectRfp = (id) => {
+        setPromptModal({
+            isOpen: true,
+            title: 'Reject Milestone',
+            message: 'Please provide a reason for rejecting this Milestone Release.',
+            isDanger: true,
+            onConfirm: async (reason) => {
+                try {
+                    await api.put(`/rfps/${id}/reject`, { reason });
+                    toast.info("Milestone Rejected.");
+                    fetchPendingApprovals();
+                } catch (err) {
+                    toast.error(err.response?.data?.error || "Rejection failed");
+                }
+            }
+        });
     };
 
     const handleLogout = () => {
@@ -216,16 +234,17 @@ const ProjectManagerDashboard = () => {
                                                     <td className="px-6 py-4 font-medium text-slate-900">{rfq.title}</td>
                                                     <td className="px-6 py-4 text-xs font-mono text-slate-500">{rfq.projectId}</td>
                                                     <td className="px-6 py-4 text-slate-700">
-                                                        <div className="font-bold">${rfq.totalBudget?.toLocaleString()}</div>
+                                                        <div className="font-bold">₹{rfq.totalBudget?.toLocaleString()}</div>
                                                         {rfq.budgetBreakdown && rfq.budgetBreakdown.length > 0 && (
                                                             <div className="mt-1 text-xs text-slate-500">
                                                                 {rfq.budgetBreakdown.map((b, i) => (
-                                                                    <div key={i}>{b.financialYear}: ${b.amount?.toLocaleString()}</div>
+                                                                    <div key={i}>{b.financialYear}: ₹{b.amount?.toLocaleString()}</div>
                                                                 ))}
                                                             </div>
                                                         )}
                                                     </td>
                                                     <td className="px-6 py-4 text-right space-x-2">
+                                                        <button onClick={() => setViewDetailsModal(rfq)} className="text-blue-600 hover:text-blue-800 text-sm">View</button>
                                                         <button onClick={() => handleRejectRfq(rfq.id)} className="text-red-600 hover:text-red-800 text-sm">Reject</button>
                                                         <button onClick={() => openApprovalModal(rfq)} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 text-sm">Approve</button>
                                                     </td>
@@ -235,6 +254,7 @@ const ProjectManagerDashboard = () => {
                                         </tbody>
                                     </table>
                                 </div>
+
 
                                 {/* RFPs Table */}
                                 <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -255,8 +275,9 @@ const ProjectManagerDashboard = () => {
                                                 <tr key={rfp.id} className="hover:bg-slate-50">
                                                     <td className="px-6 py-4 font-medium text-slate-900">{rfp.title}</td>
                                                     <td className="px-6 py-4 text-xs font-mono text-slate-500">{rfp.rfqId.substring(0, 8)}...</td>
-                                                    <td className="px-6 py-4 text-slate-700 font-bold">${rfp.amount?.toLocaleString()}</td>
+                                                    <td className="px-6 py-4 text-slate-700 font-bold">₹{rfp.amount?.toLocaleString()}</td>
                                                     <td className="px-6 py-4 text-right space-x-2">
+                                                        <button onClick={() => setViewDetailsModal(rfp)} className="text-blue-600 hover:text-blue-800 text-sm">View</button>
                                                         <button onClick={() => handleRejectRfp(rfp.id)} className="text-red-600 hover:text-red-800 text-sm">Reject</button>
                                                         <button onClick={() => handleApproveRfp(rfp.id)} className="bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700 text-sm">Approve</button>
                                                     </td>
@@ -266,6 +287,44 @@ const ProjectManagerDashboard = () => {
                                         </tbody>
                                     </table>
                                 </div>
+
+                                {/* Details Modal */}
+                                {viewDetailsModal && (
+                                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                                        <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 animate-fade-in-up">
+                                            <h3 className="text-xl font-bold text-slate-800 mb-4">Request Details</h3>
+
+                                            {/* Standard Fields */}
+                                            <div className="mb-4">
+                                                <div className="text-sm text-slate-500 mb-1">Description / Title</div>
+                                                <div className="font-medium">{viewDetailsModal.title}</div>
+                                            </div>
+
+                                            {/* Custom Data */}
+                                            {viewDetailsModal.customData && Object.keys(viewDetailsModal.customData).length > 0 ? (
+                                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
+                                                    <h4 className="text-sm font-bold text-slate-700 uppercase mb-2">Additional Information</h4>
+                                                    <div className="space-y-2">
+                                                        {Object.entries(viewDetailsModal.customData).map(([key, value]) => (
+                                                            <div key={key} className="flex flex-col border-b border-slate-200 last:border-0 pb-2 last:pb-0">
+                                                                <span className="text-xs text-slate-500 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                                                                <span className="text-sm text-slate-800 font-medium">
+                                                                    {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                                                </span>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm text-slate-400 italic">No additional custom details provided.</p>
+                                            )}
+
+                                            <div className="mt-6 flex justify-end">
+                                                <button onClick={() => setViewDetailsModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 rounded hover:bg-slate-200">Close</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
                             </>
                         )}
 
@@ -319,6 +378,18 @@ const ProjectManagerDashboard = () => {
                                 </div>
                             </div>
                         )}
+
+                        {/* Prompt Modal */}
+                        <PromptModal
+                            isOpen={promptModal.isOpen}
+                            onClose={closePromptModal}
+                            onConfirm={promptModal.onConfirm}
+                            title={promptModal.title}
+                            message={promptModal.message}
+                            submitText="Reject"
+                            isDanger={promptModal.isDanger}
+                            placeholder="Reason for rejection..."
+                        />
                     </div>
                 )}
             </main>

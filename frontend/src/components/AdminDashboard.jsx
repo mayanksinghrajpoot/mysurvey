@@ -6,13 +6,15 @@ import CorporateDetailView from './views/CorporateDetailView';
 import PMDetailView from './views/PMDetailView';
 import ProjectList from './views/ProjectList';
 import ProjectDetailView from './views/ProjectDetailView';
+import PromptModal from './PromptModal';
+import ConfirmationModal from './ConfirmationModal';
 import { toast } from 'react-toastify';
 
 const AdminDashboard = () => {
     const { user, logout } = useAuth();
 
     // View State
-    const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'management' | 'approvals' | 'projects'
+    const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'management' | 'approvals' | 'projects' | 'templates'
     const [selectedPM, setSelectedPM] = useState(null);
     const [selectedProject, setSelectedProject] = useState(null);
 
@@ -33,6 +35,9 @@ const AdminDashboard = () => {
     const [showAssocModal, setShowAssocModal] = useState(false);
     const [selectedNgo, setSelectedNgo] = useState(null);
     const [assocPmIds, setAssocPmIds] = useState([]);
+
+    // Template Builder State
+    const [templateType, setTemplateType] = useState(null); // 'RFQ' or 'RFP'
 
     // Effects
     useEffect(() => {
@@ -84,7 +89,48 @@ const AdminDashboard = () => {
         }
     };
 
-    // Approval Functions (RFQs)
+    // --- UI Modals State ---
+    const [promptModal, setPromptModal] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: null,
+        isDanger: false
+    });
+
+    const [confirmModal, setConfirmModal] = useState({
+        isOpen: false,
+        title: '',
+        message: '',
+        onConfirm: null,
+        isDanger: false
+    });
+
+    const closePromptModal = () => setPromptModal({ ...promptModal, isOpen: false });
+    const closeConfirmModal = () => setConfirmModal({ ...confirmModal, isOpen: false });
+
+    // --- Actions ---
+    const handleRejection = (id, type, apiPath) => {
+        setPromptModal({
+            isOpen: true,
+            title: `Reject ${type}`,
+            message: `Please provide a reason for rejecting this ${type}.`,
+            isDanger: true,
+            onConfirm: async (reason) => {
+                try {
+                    await api.put(`${apiPath}/${id}/reject`, { reason });
+                    toast.info(`${type} Rejected.`);
+                    fetchPendingApprovals();
+                } catch (err) {
+                    toast.error(err.response?.data?.error || "Rejection failed");
+                }
+            }
+        });
+    };
+
+    const handleRejectRfq = (id) => handleRejection(id, 'Budget Request', '/rfqs');
+    const handleRejectRfp = (id) => handleRejection(id, 'Milestone Release', '/rfps');
+
     const handleApproveRfq = async (rfqId) => {
         try {
             await api.put(`/rfqs/${rfqId}/approve-admin`);
@@ -95,19 +141,6 @@ const AdminDashboard = () => {
         }
     };
 
-    const handleRejectRfq = async (rfqId) => {
-        const reason = prompt("Enter rejection reason:");
-        if (!reason) return;
-        try {
-            await api.put(`/rfqs/${rfqId}/reject`, { reason });
-            toast.info("RFQ Rejected.");
-            fetchPendingApprovals();
-        } catch (err) {
-            toast.error("Rejection failed: " + err.message);
-        }
-    };
-
-    // Approval Functions (RFPs)
     const handleApproveRfp = async (rfpId) => {
         try {
             await api.put(`/rfps/${rfpId}/approve-admin`);
@@ -115,18 +148,6 @@ const AdminDashboard = () => {
             fetchPendingApprovals();
         } catch (err) {
             toast.error(err.response?.data?.error || "Approval failed");
-        }
-    };
-
-    const handleRejectRfp = async (rfpId) => {
-        const reason = prompt("Enter rejection reason:");
-        if (!reason) return;
-        try {
-            await api.put(`/rfps/${rfpId}/reject`, { reason });
-            toast.info("Milestone Rejected.");
-            fetchPendingApprovals();
-        } catch (err) {
-            toast.error(err.response?.data?.error || "Rejection failed");
         }
     };
 
@@ -189,15 +210,23 @@ const AdminDashboard = () => {
         }
     };
 
-    const handleDeleteUser = async (u) => {
-        if (!window.confirm(`Are you sure you want to delete user ${u.username}? This cannot be undone.`)) return;
-        try {
-            await api.delete(`/auth/users/${u.id}`);
-            toast.success("User deleted successfully");
-            fetchUsers();
-        } catch (err) {
-            toast.error("Delete failed: " + (err.response?.data?.error || err.message));
-        }
+    const handleDeleteUser = (u) => {
+        setConfirmModal({
+            isOpen: true,
+            title: 'Delete User?',
+            message: `Are you sure you want to delete user ${u.username}? This cannot be undone.`,
+            isDanger: true,
+            confirmText: 'Delete User',
+            onConfirm: async () => {
+                try {
+                    await api.delete(`/auth/users/${u.id}`);
+                    toast.success("User deleted successfully");
+                    fetchUsers();
+                } catch (err) {
+                    toast.error("Delete failed: " + (err.response?.data?.error || err.message));
+                }
+            }
+        });
     };
 
     // Filtered Lists
@@ -237,6 +266,12 @@ const AdminDashboard = () => {
                                     className={`px-3 py-1.5 rounded text-sm font-medium ${activeTab === 'management' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:text-slate-900'}`}
                                 >
                                     Management
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('templates')}
+                                    className={`px-3 py-1.5 rounded text-sm font-medium ${activeTab === 'templates' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:text-slate-900'}`}
+                                >
+                                    Form Templates
                                 </button>
                             </div>
                         </div>
@@ -476,66 +511,135 @@ const AdminDashboard = () => {
                         </div>
                     </div>
                 )}
-            </main>
+
+                {activeTab === 'templates' && (
+                    <div className="animate-fade-in-up">
+                        {templateType ? (
+                            <TemplateBuilder type={templateType} onClose={() => setTemplateType(null)} />
+                        ) : (
+                            <div className="space-y-6">
+                                <div>
+                                    <h2 className="text-2xl font-bold text-slate-800 mb-2">Form Templates</h2>
+                                    <p className="text-slate-600">Design the strict forms that NGOs must fill out when requesting budgets (RFQs) or funds (RFPs).</p>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {/* RFQ Card */}
+                                    <div
+                                        onClick={() => setTemplateType('RFQ')}
+                                        className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-md hover:border-blue-400 transition group"
+                                    >
+                                        <div className="h-12 w-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4 text-2xl group-hover:scale-110 transition-transform">
+                                            📄
+                                        </div>
+                                        <h3 className="text-lg font-bold text-slate-800 mb-2">Budget Request (RFQ) Template</h3>
+                                        <p className="text-slate-500 text-sm">Define the questions for the initial project budget proposal. Includes budget breakdown and project details.</p>
+                                        <div className="mt-4 text-blue-600 font-medium text-sm">Edit Template →</div>
+                                    </div>
+
+                                    {/* RFP Card */}
+                                    <div
+                                        onClick={() => setTemplateType('RFP')}
+                                        className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 cursor-pointer hover:shadow-md hover:border-purple-400 transition group"
+                                    >
+                                        <div className="h-12 w-12 bg-purple-100 rounded-lg flex items-center justify-center mb-4 text-2xl group-hover:scale-110 transition-transform">
+                                            💸
+                                        </div>
+                                        <h3 className="text-lg font-bold text-slate-800 mb-2">Fund Release (RFP) Template</h3>
+                                        <p className="text-slate-500 text-sm">Define the questions for milestone fund release requests. Includes evidence submission and expense tracking.</p>
+                                        <div className="mt-4 text-purple-600 font-medium text-sm">Edit Template →</div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )
+                }
+            </main >
 
             {/* Association Modal */}
-            {showAssocModal && selectedNgo && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-                    <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
-                        <h2 className="text-xl font-bold mb-4">Associate PMs to {selectedNgo.name}</h2>
-                        <div className="mb-4 max-h-60 overflow-y-auto space-y-2">
-                            {pms.length === 0 ? <p className="text-slate-500">No PMs available.</p> : (
-                                pms.map(pm => (
-                                    <label key={pm.id} className="flex items-center space-x-2 p-2 hover:bg-slate-50 rounded">
-                                        <input
-                                            type="checkbox"
-                                            checked={assocPmIds.includes(pm.id)}
-                                            onChange={() => togglePmAssoc(pm.id)}
-                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                                        />
-                                        <span className="text-slate-700">{pm.name} (@{pm.username})</span>
-                                    </label>
-                                ))
-                            )}
-                        </div>
-                        <div className="flex justify-end space-x-3">
-                            <button onClick={() => setShowAssocModal(false)} className="px-4 py-2 border border-slate-300 rounded-md text-slate-700 hover:bg-slate-50">Cancel</button>
-                            <button onClick={saveAssociations} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save Associations</button>
+            {
+                showAssocModal && selectedNgo && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                        <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
+                            <h2 className="text-xl font-bold mb-4">Associate PMs to {selectedNgo.name}</h2>
+                            <div className="mb-4 max-h-60 overflow-y-auto space-y-2">
+                                {pms.length === 0 ? <p className="text-slate-500">No PMs available.</p> : (
+                                    pms.map(pm => (
+                                        <label key={pm.id} className="flex items-center space-x-2 p-2 hover:bg-slate-50 rounded">
+                                            <input
+                                                type="checkbox"
+                                                checked={assocPmIds.includes(pm.id)}
+                                                onChange={() => togglePmAssoc(pm.id)}
+                                                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                            />
+                                            <span className="text-slate-700">{pm.name} (@{pm.username})</span>
+                                        </label>
+                                    ))
+                                )}
+                            </div>
+                            <div className="flex justify-end space-x-3">
+                                <button onClick={() => setShowAssocModal(false)} className="px-4 py-2 border border-slate-300 rounded-md text-slate-700 hover:bg-slate-50">Cancel</button>
+                                <button onClick={saveAssociations} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save Associations</button>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Edit User Modal */}
-            {showEditModal && editUser && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-                    <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 animate-fade-in-up">
-                        <h2 className="text-xl font-bold mb-4">Edit User</h2>
-                        <form onSubmit={handleUpdateUser} className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Name</label>
-                                <input type="text" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" required />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Username</label>
-                                <input type="text" value={editForm.username} onChange={e => setEditForm({ ...editForm, username: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" required />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700">Role</label>
-                                <select value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
-                                    <option value="PROJECT_MANAGER">Project Manager</option>
-                                    <option value="NGO">NGO</option>
-                                </select>
-                            </div>
-                            <div className="flex justify-end space-x-3 pt-4">
-                                <button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 border border-slate-300 rounded-md text-slate-700 hover:bg-slate-50">Cancel</button>
-                                <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Update User</button>
-                            </div>
-                        </form>
+            {
+                showEditModal && editUser && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                        <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6 animate-fade-in-up">
+                            <h2 className="text-xl font-bold mb-4">Edit User</h2>
+                            <form onSubmit={handleUpdateUser} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Name</label>
+                                    <input type="text" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" required />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Username</label>
+                                    <input type="text" value={editForm.username} onChange={e => setEditForm({ ...editForm, username: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2" required />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700">Role</label>
+                                    <select value={editForm.role} onChange={e => setEditForm({ ...editForm, role: e.target.value })} className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2">
+                                        <option value="PROJECT_MANAGER">Project Manager</option>
+                                        <option value="NGO">NGO</option>
+                                    </select>
+                                </div>
+                                <div className="flex justify-end space-x-3 pt-4">
+                                    <button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 border border-slate-300 rounded-md text-slate-700 hover:bg-slate-50">Cancel</button>
+                                    <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Update User</button>
+                                </div>
+                            </form>
+                        </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+            {/* Prompt Modal */}
+            <PromptModal
+                isOpen={promptModal.isOpen}
+                onClose={closePromptModal}
+                onConfirm={promptModal.onConfirm}
+                title={promptModal.title}
+                message={promptModal.message}
+                submitText="Reject"
+                isDanger={promptModal.isDanger}
+                placeholder="Reason for rejection..."
+            />
+
+            {/* Confirmation Modal */}
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={closeConfirmModal}
+                onConfirm={confirmModal.onConfirm}
+                title={confirmModal.title}
+                message={confirmModal.message}
+                confirmText={confirmModal.confirmText || "Confirm"}
+                isDanger={confirmModal.isDanger}
+            />
+        </div >
     );
 };
 

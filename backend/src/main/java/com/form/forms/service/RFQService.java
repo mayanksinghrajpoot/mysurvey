@@ -12,6 +12,8 @@ import java.util.Optional;
 import com.form.forms.model.User;
 import com.form.forms.model.Role;
 import com.form.forms.repository.UserRepository;
+import com.form.forms.model.Project;
+import com.form.forms.repository.ProjectRepository;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.access.AccessDeniedException;
 
@@ -23,6 +25,9 @@ public class RFQService {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private ProjectRepository projectRepository;
 
     public RFQ createRFQ(RFQ rfq) {
         // Validation: One RFQ per NGO per Project
@@ -58,6 +63,13 @@ public class RFQService {
         rfq.setStatus(RFQStatus.PENDING_PM);
         rfq.setCreatedAt(new Date());
         return rfqRepository.save(rfq);
+    }
+
+    // For PM Dashboard: Get Pending Approvals (Optimized)
+    public List<RFQ> getPendingRFQsForPM(String pmId) {
+        List<Project> projects = projectRepository.findByProjectManagerIdsContaining(pmId);
+        List<String> projectIds = projects.stream().map(Project::getId).toList();
+        return rfqRepository.findByProjectIdInAndStatus(projectIds, RFQStatus.PENDING_PM);
     }
 
     public List<RFQ> getRFQsByProject(String projectId) {

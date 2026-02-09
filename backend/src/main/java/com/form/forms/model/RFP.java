@@ -21,6 +21,9 @@ public class RFP {
     private String title;
     private Double amount;
 
+    // Dynamic Form Data
+    private java.util.Map<String, Object> customData;
+
     private RFPStatus status = RFPStatus.PENDING_PM;
 
     private Date createdAt = new Date();
@@ -119,5 +122,13 @@ public class RFP {
 
     public void setRejectionReason(String rejectionReason) {
         this.rejectionReason = rejectionReason;
+    }
+
+    public java.util.Map<String, Object> getCustomData() {
+        return customData;
+    }
+
+    public void setCustomData(java.util.Map<String, Object> customData) {
+        this.customData = customData;
     }
 }
