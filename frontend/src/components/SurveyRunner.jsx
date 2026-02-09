@@ -4,6 +4,7 @@ import { Survey } from 'survey-react-ui';
 import 'survey-core/survey-core.min.css';
 import { useParams, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
+import { toast } from 'react-toastify';
 
 const SurveyRunner = () => {
     const { id } = useParams();
@@ -54,7 +55,7 @@ const SurveyRunner = () => {
                     try {
                         await api.post(`/surveys/submit/${id}`, payload);
                     } catch (err) {
-                        alert('Failed to submit survey');
+                        toast.error('Failed to submit survey');
                         console.error(err);
                     }
                 });

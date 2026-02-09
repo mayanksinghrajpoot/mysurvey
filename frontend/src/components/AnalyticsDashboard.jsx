@@ -172,7 +172,11 @@ const AnalyticsDashboard = () => {
 
     const handleDrillDown = (questionKey, answerLabel) => {
         // Navigate within the SPA
-        navigate(`/surveys/${id}/responses?questionKey=${encodeURIComponent(questionKey)}&answerValue=${encodeURIComponent(answerLabel)}`);
+        if (answerLabel === null || answerLabel === undefined) {
+            navigate(`/surveys/${id}/responses`);
+        } else {
+            navigate(`/surveys/${id}/responses?questionKey=${encodeURIComponent(questionKey)}&answerValue=${encodeURIComponent(answerLabel)}`);
+        }
     };
 
     // If survey is NOT loaded yet, show full page spinner (first load)

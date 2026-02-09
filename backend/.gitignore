@@ -31,3 +31,37 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Maven / Gradle
+/target/
+/build/
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
+
+# Environment / secrets
+.env
+application.properties
+application.yml
+application-*.yml
+application-*.properties
+
+# Certificates & keys
+*.key
+*.pem
+*.p12
+*.jks
+
+# Test reports
+/hs_err_pid*
+/test-output/
+/target/surefire-reports/
+/target/failsafe-reports/

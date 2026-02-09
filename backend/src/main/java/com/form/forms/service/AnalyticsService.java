@@ -110,22 +110,21 @@ public class AnalyticsService {
         // Aggregate in Memory (Fast for < 3650 days i.e. 10 years)
         Map<String, Integer> aggregated = new HashMap<>();
 
-        // Need to know if we are using minified keys lookup?
-        // The dashboard asks for a Specific Question Key (e.g. "q1" if minified, or
-        // "satisfaction" if not).
-        // The stats store exactly what was in the response (likely minified "q1").
-        // So we just look up `questionKey` directly in the map.
+        String minifiedKey = resolveQuestionKey(surveyId, questionKey);
 
         for (SurveyDailyStats stats : statsList) {
-            if (stats.getQuestionStats() != null && stats.getQuestionStats().containsKey(questionKey)) {
+            if (stats.getQuestionStats() == null)
+                continue;
+
+            // Check Minified Key (e.g. "q1")
+            if (stats.getQuestionStats().containsKey(minifiedKey)) {
+                Map<String, Integer> dailyMap = stats.getQuestionStats().get(minifiedKey);
+                mergeStats(aggregated, dailyMap);
+            }
+            // Check Original Key (e.g. "product_rating") if different
+            if (!minifiedKey.equals(questionKey) && stats.getQuestionStats().containsKey(questionKey)) {
                 Map<String, Integer> dailyMap = stats.getQuestionStats().get(questionKey);
-                for (Map.Entry<String, Integer> entry : dailyMap.entrySet()) {
-                    String key = entry.getKey();
-                    if (key == null || key.trim().isEmpty()) {
-                        continue;
-                    }
-                    aggregated.merge(key, entry.getValue(), Integer::sum);
-                }
+                mergeStats(aggregated, dailyMap);
             }
         }
 
@@ -214,27 +213,38 @@ public class AnalyticsService {
         operations.add(Aggregation.match(criteria));
 
         // 3. Project & Convert Data Type
-        String fieldPath = "answers." + questionKey;
-        // Ensure field exists
-        operations.add(Aggregation.match(Criteria.where(fieldPath).exists(true)));
+        String minifiedKey = resolveQuestionKey(surveyId, questionKey);
+
+        // Define paths
+        String pathMinified = "answers." + minifiedKey;
+        String pathOriginal = "answers." + questionKey;
+
+        // Match Logic: Exists in either
+        Criteria existsCriteria = new Criteria().orOperator(
+                Criteria.where(pathMinified).exists(true),
+                Criteria.where(pathOriginal).exists(true));
+        operations.add(Aggregation.match(existsCriteria));
 
         String convertedField = "convertedValue";
         boolean isNumericMetric = List.of("AVG", "MIN", "MAX", "SUM").contains(metricType.toUpperCase());
 
-        if (isNumericMetric) {
-            // Safe Convert to Double: Handles strings, numbers, and errors/nulls
-            // $convert: { input: "$answers.key", to: "double", onError: 0, onNull: 0 }
+        // Field Value Expression: $ifNull: [ "$answers.q1", "$answers.product_rating" ]
+        org.springframework.data.mongodb.core.aggregation.AggregationExpression valueExpression = org.springframework.data.mongodb.core.aggregation.ConditionalOperators
+                .ifNull(pathMinified).thenValueOf(pathOriginal);
 
+        if (isNumericMetric) {
+            // Safe Convert to Double
             operations.add(Aggregation.project()
                     .and(org.springframework.data.mongodb.core.aggregation.ConvertOperators.Convert
-                            .convertValue("$" + fieldPath)
+                            .convertValue(valueExpression) // Use (ifNull) expression as input
                             .to(org.springframework.data.mongodb.core.schema.JsonSchemaObject.Type.doubleType())
                             .onErrorReturn(0)
                             .onNullReturn(0))
                     .as(convertedField));
         } else {
-            // Check if we need to project for UNIQUE (could be string)
-            operations.add(Aggregation.project().and(fieldPath).as(convertedField));
+            // Project the raw value (coalesced)
+            operations.add(Aggregation.project()
+                    .and(valueExpression).as(convertedField));
         }
 
         // 4. Group / Aggregate based on Metric Type
@@ -264,7 +274,9 @@ public class AnalyticsService {
 
         // Execute
         Aggregation aggregation = Aggregation.newAggregation(operations);
-        AggregationResults<Map> results = mongoTemplate.aggregate(aggregation, "surveyResponse", Map.class);
+        // Fix: Use the class type so Spring Data uses the correct collection name
+        // ("responses")
+        AggregationResults<Map> results = mongoTemplate.aggregate(aggregation, SurveyResponse.class, Map.class);
         Map uniqueResult = results.getUniqueMappedResult();
 
         Map<String, Object> response = new HashMap<>();
@@ -272,5 +284,28 @@ public class AnalyticsService {
         response.put("value", uniqueResult != null ? uniqueResult.get(projectField) : 0);
 
         return response;
+    }
+
+    private String resolveQuestionKey(String surveyId, String questionKey) {
+        com.form.forms.model.Survey survey = surveyRepository.findById(surveyId).orElse(null);
+        if (survey != null && survey.getMinifiedKeys() != null) {
+            String minified = survey.getMinifiedKeys().get(questionKey);
+            if (minified != null) {
+                return minified;
+            }
+        }
+        return questionKey;
+    }
+
+    private void mergeStats(Map<String, Integer> aggregated, Map<String, Integer> dailyMap) {
+        if (dailyMap == null)
+            return;
+        for (Map.Entry<String, Integer> entry : dailyMap.entrySet()) {
+            String key = entry.getKey();
+            if (key == null || key.trim().isEmpty()) {
+                continue;
+            }
+            aggregated.merge(key, entry.getValue(), Integer::sum);
+        }
     }
 }

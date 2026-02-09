@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { toast } from 'react-toastify';
+import ConfirmationModal from '../ConfirmationModal';
 
 const ProjectDetailView = () => {
     const { id } = useParams();
@@ -15,6 +17,12 @@ const ProjectDetailView = () => {
     const [showAssignModal, setShowAssignModal] = useState(false);
     const [selectedPmId, setSelectedPmId] = useState('');
     const [assigning, setAssigning] = useState(false);
+
+    // Confirmation Modal
+    const [confirmModal, setConfirmModal] = useState({
+        isOpen: false,
+        pmId: null
+    });
 
     useEffect(() => {
         fetchData();
@@ -34,6 +42,7 @@ const ProjectDetailView = () => {
             setSurveys(surveyRes.data);
         } catch (error) {
             console.error("Failed to fetch details", error);
+            toast.error("Failed to load project details.");
         } finally {
             setLoading(false);
         }
@@ -58,27 +67,36 @@ const ProjectDetailView = () => {
 
             setShowAssignModal(false);
             setSelectedPmId('');
-            alert("Project Manager added successfully!");
+            toast.success("Project Manager added successfully!");
         } catch (error) {
             console.error(error);
-            alert("Failed to add PM");
+            toast.error("Failed to add Project Manager.");
         } finally {
             setAssigning(false);
         }
     };
 
-    const handleRemovePm = async (pmId) => {
-        if (!window.confirm("Remove this PM from the project?")) return;
+    const handleRemovePm = (pmId) => {
+        setConfirmModal({ isOpen: true, pmId });
+    };
+
+    const handleConfirmRemove = async () => {
+        const pmId = confirmModal.pmId;
+        if (!pmId) return;
+
         try {
             await api.delete(`/projects/${id}/managers/${pmId}`);
             // Refresh
             const res = await api.get(`/projects/${id}`);
             setProject(res.data);
+            toast.success("Project Manager removed.");
         } catch (error) {
             console.error(error);
-            alert("Failed to remove PM");
+            toast.error("Failed to remove Project Manager.");
+        } finally {
+            setConfirmModal({ isOpen: false, pmId: null });
         }
-    }
+    };
 
     if (loading) return <div className="p-8 text-center text-slate-500">Loading details...</div>;
     if (!project) return <div className="p-8 text-center text-red-500">Project not found.</div>;
@@ -196,7 +214,7 @@ const ProjectDetailView = () => {
 
             {/* ASSIGN PM MODAL */}
             {showAssignModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
                     <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 animate-fade-in-up">
                         <h2 className="text-xl font-bold mb-4 text-slate-800">Add Project Manager</h2>
                         <div className="mb-6">
@@ -207,18 +225,29 @@ const ProjectDetailView = () => {
                                 className="w-full border-slate-300 rounded-lg shadow-sm focus:border-blue-500 focus:ring-blue-500"
                             >
                                 <option value="">Select a PM...</option>
+                                <option disabled className="text-gray-400">---</option>
                                 {pms.filter(pm => !assignedPmIds.includes(pm.id)).map(pm => (
                                     <option key={pm.id} value={pm.id}>{pm.name} (@{pm.username})</option>
                                 ))}
                             </select>
                         </div>
                         <div className="flex justify-end space-x-3">
-                            <button onClick={() => setShowAssignModal(false)} className="px-4 py-2 border border-slate-300 rounded text-slate-700">Cancel</button>
-                            <button onClick={handleAddPm} disabled={assigning || !selectedPmId} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">Add Manager</button>
+                            <button onClick={() => setShowAssignModal(false)} className="px-4 py-2 border border-slate-300 rounded text-slate-700 hover:bg-slate-50">Cancel</button>
+                            <button onClick={handleAddPm} disabled={assigning || !selectedPmId} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors">Add Manager</button>
                         </div>
                     </div>
                 </div>
             )}
+
+            <ConfirmationModal
+                isOpen={confirmModal.isOpen}
+                onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+                onConfirm={handleConfirmRemove}
+                title="Remove Project Manager"
+                message="Are you sure you want to remove this Project Manager from the project?"
+                isDanger={true}
+                confirmText="Remove"
+            />
         </div>
     );
 };

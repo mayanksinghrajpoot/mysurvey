@@ -4,22 +4,27 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import CorporateDetailView from './views/CorporateDetailView';
 import PMDetailView from './views/PMDetailView';
+import { toast } from 'react-toastify';
 
 const AdminDashboard = () => {
     const { user, logout } = useAuth();
 
     // View State
-    const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'management'
-    const [overviewLevel, setOverviewLevel] = useState('corporate'); // 'corporate' | 'pm'
+    const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'management' | 'approvals'
     const [selectedPM, setSelectedPM] = useState(null);
 
-    // Management State (Restored from previous version)
+    // Management State
     const [manageView, setManageView] = useState('pms'); // 'pms' | 'ngos'
     const [users, setUsers] = useState([]);
     const [newName, setNewName] = useState('');
     const [newUsername, setNewUsername] = useState('');
     const [newPassword, setNewPassword] = useState('');
     const [msg, setMsg] = useState('');
+
+    // Approval State
+    const [pendingRfqs, setPendingRfqs] = useState([]);
+    const [pendingRfps, setPendingRfps] = useState([]);
+    const [loading, setLoading] = useState(false);
 
     // Association Modal State
     const [showAssocModal, setShowAssocModal] = useState(false);
@@ -28,9 +33,8 @@ const AdminDashboard = () => {
 
     // Effects
     useEffect(() => {
-        if (activeTab === 'management') {
-            fetchUsers();
-        }
+        if (activeTab === 'management') fetchUsers();
+        if (activeTab === 'approvals') fetchPendingApprovals();
     }, [activeTab]);
 
     const fetchUsers = async () => {
@@ -39,6 +43,21 @@ const AdminDashboard = () => {
             setUsers(res.data);
         } catch (err) {
             console.error(err);
+        }
+    };
+
+    const fetchPendingApprovals = async () => {
+        setLoading(true);
+        try {
+            const rfqRes = await api.get('/rfqs/pending-admin');
+            setPendingRfqs(rfqRes.data);
+
+            const rfpRes = await api.get('/rfps/pending-admin');
+            setPendingRfps(rfpRes.data);
+        } catch (err) {
+            toast.error("Failed to fetch pending approvals");
+        } finally {
+            setLoading(false);
         }
     };
 
@@ -59,6 +78,52 @@ const AdminDashboard = () => {
             fetchUsers();
         } catch (err) {
             setMsg('Failed: ' + (err.response?.data?.error || err.message));
+        }
+    };
+
+    // Approval Functions (RFQs)
+    const handleApproveRfq = async (rfqId) => {
+        try {
+            await api.put(`/rfqs/${rfqId}/approve-admin`);
+            toast.success("RFQ Final Approval Granted!");
+            fetchPendingApprovals();
+        } catch (err) {
+            toast.error("Approval failed: " + err.message);
+        }
+    };
+
+    const handleRejectRfq = async (rfqId) => {
+        const reason = prompt("Enter rejection reason:");
+        if (!reason) return;
+        try {
+            await api.put(`/rfqs/${rfqId}/reject`, { reason });
+            toast.info("RFQ Rejected.");
+            fetchPendingApprovals();
+        } catch (err) {
+            toast.error("Rejection failed: " + err.message);
+        }
+    };
+
+    // Approval Functions (RFPs)
+    const handleApproveRfp = async (rfpId) => {
+        try {
+            await api.put(`/rfps/${rfpId}/approve-admin`);
+            toast.success("Milestone Final Release Approved!");
+            fetchPendingApprovals();
+        } catch (err) {
+            toast.error(err.response?.data?.error || "Approval failed");
+        }
+    };
+
+    const handleRejectRfp = async (rfpId) => {
+        const reason = prompt("Enter rejection reason:");
+        if (!reason) return;
+        try {
+            await api.put(`/rfps/${rfpId}/reject`, { reason });
+            toast.info("Milestone Rejected.");
+            fetchPendingApprovals();
+        } catch (err) {
+            toast.error(err.response?.data?.error || "Rejection failed");
         }
     };
 
@@ -87,8 +152,9 @@ const AdminDashboard = () => {
 
             setShowAssocModal(false);
             fetchUsers();
+            toast.success("Associations updated successfully!");
         } catch (e) {
-            alert("Failed to update associations: " + e.message);
+            toast.error("Failed to update associations: " + e.message);
         }
     };
 
@@ -117,12 +183,12 @@ const AdminDashboard = () => {
                                 >
                                     Overview
                                 </button>
-                                <Link
-                                    to="/projects"
-                                    className={`px-3 py-1.5 rounded text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50`}
+                                <button
+                                    onClick={() => setActiveTab('approvals')}
+                                    className={`px-3 py-1.5 rounded text-sm font-medium ${activeTab === 'approvals' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:text-slate-900'}`}
                                 >
-                                    Projects
-                                </Link>
+                                    Funding Approvals
+                                </button>
                                 <button
                                     onClick={() => setActiveTab('management')}
                                     className={`px-3 py-1.5 rounded text-sm font-medium ${activeTab === 'management' ? 'bg-blue-100 text-blue-700' : 'text-slate-600 hover:text-slate-900'}`}
@@ -145,8 +211,7 @@ const AdminDashboard = () => {
             </nav>
 
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-                {activeTab === 'overview' ? (
-                    // Overview Tab (Drill Down)
+                {activeTab === 'overview' && (
                     <div>
                         {selectedPM ? (
                             <div className="space-y-4">
@@ -169,8 +234,118 @@ const AdminDashboard = () => {
                             </div>
                         )}
                     </div>
-                ) : (
-                    // Management Tab (Tables/Forms)
+                )}
+
+                {activeTab === 'approvals' && (
+                    <div className="animate-fade-in-up space-y-8">
+                        <div className="flex justify-between items-center">
+                            <h2 className="text-2xl font-bold text-slate-800">Final Funding Approvals</h2>
+                            <button onClick={fetchPendingApprovals} className="text-sm text-blue-600 hover:underline">Refresh</button>
+                        </div>
+
+                        {loading && <div className="text-center py-8 text-slate-500">Loading requests...</div>}
+
+                        {!loading && (
+                            <>
+                                {/* RFQs Table */}
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                    <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 font-bold text-slate-700">
+                                        Budget Requests (RFQs)
+                                    </div>
+                                    <table className="min-w-full divide-y divide-slate-100">
+                                        <thead className="bg-slate-50">
+                                            <tr>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">RFQ Title</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Project ID</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Budget Requested</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                                                <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-slate-100">
+                                            {pendingRfqs.map(rfq => (
+                                                <tr key={rfq.id} className="hover:bg-slate-50">
+                                                    <td className="px-6 py-4 font-medium text-slate-900">{rfq.title}</td>
+                                                    <td className="px-6 py-4 text-xs font-mono text-slate-500">{rfq.projectId}</td>
+                                                    <td className="px-6 py-4 text-slate-700 font-bold">${rfq.totalBudget?.toLocaleString()}</td>
+                                                    <td className="px-6 py-4">
+                                                        <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">PM Approved</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right space-x-2">
+                                                        <button
+                                                            onClick={() => handleRejectRfq(rfq.id)}
+                                                            className="px-3 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100 text-sm font-medium"
+                                                        >
+                                                            Reject
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleApproveRfq(rfq.id)}
+                                                            className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm font-medium"
+                                                        >
+                                                            Final Approve
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {pendingRfqs.length === 0 && (
+                                                <tr><td colSpan="5" className="px-6 py-6 text-center text-slate-400 text-sm">No pending budget requests.</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {/* RFPs Table */}
+                                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                                    <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 font-bold text-slate-700">
+                                        Milestone Releases (RFPs)
+                                    </div>
+                                    <table className="min-w-full divide-y divide-slate-100">
+                                        <thead className="bg-slate-50">
+                                            <tr>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Milestone</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">RFQ Ref</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Amount</th>
+                                                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Status</th>
+                                                <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="bg-white divide-y divide-slate-100">
+                                            {pendingRfps.map(rfp => (
+                                                <tr key={rfp.id} className="hover:bg-slate-50">
+                                                    <td className="px-6 py-4 font-medium text-slate-900">{rfp.title}</td>
+                                                    <td className="px-6 py-4 text-xs font-mono text-slate-500">{rfp.rfqId.substring(0, 8)}...</td>
+                                                    <td className="px-6 py-4 text-slate-700 font-bold">${rfp.amount?.toLocaleString()}</td>
+                                                    <td className="px-6 py-4">
+                                                        <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">PM Approved</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 text-right space-x-2">
+                                                        <button
+                                                            onClick={() => handleRejectRfp(rfp.id)}
+                                                            className="px-3 py-1 bg-red-50 text-red-600 rounded hover:bg-red-100 text-sm font-medium"
+                                                        >
+                                                            Reject
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleApproveRfp(rfp.id)}
+                                                            className="px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 text-sm font-medium"
+                                                        >
+                                                            Final Release
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {pendingRfps.length === 0 && (
+                                                <tr><td colSpan="5" className="px-6 py-6 text-center text-slate-400 text-sm">No pending milestone requests.</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
+
+                {activeTab === 'management' && (
                     <div className="flex gap-8">
                         <div className="w-48 flex-shrink-0">
                             <div className="space-y-1">
@@ -227,7 +402,6 @@ const AdminDashboard = () => {
                                                     {manageView === 'ngos' && (
                                                         <button onClick={() => openAssocModal(u)} className="text-blue-600 hover:text-blue-900">Manage PM Links</button>
                                                     )}
-                                                    {/* Add Delete/Edit later */}
                                                 </td>
                                             </tr>
                                         ))}
@@ -242,7 +416,7 @@ const AdminDashboard = () => {
                 )}
             </main>
 
-            {/* Association Modal (Copied from previous step) */}
+            {/* Association Modal */}
             {showAssocModal && selectedNgo && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
                     <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">

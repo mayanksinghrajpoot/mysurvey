@@ -58,7 +58,7 @@ const ChartCard = ({ title, type, data, color = "#8884d8", index = 0, questionKe
         </div>
     );
 
-    // Helper: Render KPI Display
+    // Helper: Render Metric Value Display
     const renderMetricValue = () => {
         if (isLoading) return renderSkeleton();
 
@@ -67,11 +67,27 @@ const ChartCard = ({ title, type, data, color = "#8884d8", index = 0, questionKe
             displayValue = metricValue.toLocaleString(undefined, { maximumFractionDigits: 2 });
         }
 
+        // Enable drill-down for ALL metrics as per user request.
+        // - AVG, MIN, MAX: Filter by the specific value.
+        // - COUNT, UNIQUE: "Show All" (navigate to responses without specific value filter)
+        const canDrillDown = onDrillDown && ['MIN', 'MAX', 'AVG', 'COUNT', 'UNIQUE'].includes(currentMetric);
+
+        const handleClick = () => {
+            if (canDrillDown && metricValue !== null) {
+                if (['COUNT', 'UNIQUE'].includes(currentMetric)) {
+                    onDrillDown(questionKey, null); // Clear filter
+                } else {
+                    onDrillDown(questionKey, metricValue); // Filter by value
+                }
+            }
+        };
+
         return (
             <motion.div
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
-                className="flex flex-col items-center justify-center h-[300px] bg-gradient-to-br from-slate-50 to-white rounded-xl border border-dotted border-slate-200 relative overflow-hidden"
+                onClick={handleClick}
+                className={`flex flex-col items-center justify-center h-[300px] bg-gradient-to-br from-slate-50 to-white rounded-xl border border-dotted border-slate-200 relative overflow-hidden ${canDrillDown ? 'cursor-pointer hover:shadow-md hover:border-blue-200 transition-all' : ''}`}
             >
                 <div className="absolute top-0 right-0 p-4 opacity-5">
                     <Activity size={120} />
@@ -84,10 +100,12 @@ const ChartCard = ({ title, type, data, color = "#8884d8", index = 0, questionKe
                     {currentMetric === 'UNIQUE' && <Activity size={14} />}
                     {currentMetric === 'DISTRIBUTION' ? 'Overview' : currentMetric}
                 </span>
-                <span className="text-6xl font-black text-slate-800 tracking-tight">
+                <span className={`text-6xl font-black tracking-tight ${canDrillDown ? 'text-blue-600' : 'text-slate-800'}`}>
                     {displayValue !== null ? displayValue : '-'}
                 </span>
-                <span className="text-sm text-slate-500 mt-2 font-medium">calculated result</span>
+                <span className="text-sm text-slate-500 mt-2 font-medium">
+                    {canDrillDown ? 'Click to filter responses' : 'calculated result'}
+                </span>
             </motion.div>
         );
     };

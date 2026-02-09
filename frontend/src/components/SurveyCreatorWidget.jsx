@@ -5,6 +5,7 @@ import 'survey-creator-core/survey-creator-core.min.css';
 import api from '../services/api';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { toast } from 'react-toastify';
 
 const SurveyCreatorWidget = () => {
     const navigate = useNavigate();
@@ -35,7 +36,7 @@ const SurveyCreatorWidget = () => {
             setProjects(res.data);
         } catch (error) {
             console.error("Failed to fetch projects", error);
-            alert("Could not load your projects.");
+            toast.error("Could not load your projects.");
         } finally {
             setLoadingProjects(false);
         }
@@ -56,7 +57,7 @@ const SurveyCreatorWidget = () => {
         newCreator.saveSurveyFunc = async (saveNo, callback) => {
             // Block save if no project (shouldn't happen with modal, but double check)
             if (!projectId && user?.role === 'PROJECT_MANAGER') {
-                alert("You must select a project first.");
+                toast.warning("You must select a project first.");
                 setShowProjectModal(true);
                 callback(saveNo, false);
                 return;
@@ -108,7 +109,7 @@ const SurveyCreatorWidget = () => {
             } catch (err) {
                 console.error(err);
                 callback(saveNo, false);
-                alert('Error saving survey: ' + (err.response?.data?.message || err.message));
+                toast.error('Error saving survey: ' + (err.response?.data?.message || err.message));
             }
         };
 

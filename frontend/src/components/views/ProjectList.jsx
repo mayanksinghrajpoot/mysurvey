@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import { toast } from 'react-toastify';
 
 const ProjectList = () => {
     const { user } = useAuth();
@@ -36,10 +37,10 @@ const ProjectList = () => {
             setProjects([...projects, res.data]);
             setShowCreateModal(false);
             setNewProject({ name: '', description: '' });
-            alert("Project created successfully!");
+            toast.success("Project created successfully!");
         } catch (error) {
             console.error("Failed to create project", error);
-            alert("Failed to create project.");
+            toast.error("Failed to create project.");
         } finally {
             setCreating(false);
         }

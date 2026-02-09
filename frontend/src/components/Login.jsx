@@ -95,7 +95,7 @@ const Login = () => {
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Organization Name</label>
                                 <input
                                     type="text"
-                                    value={name}
+                                    // value={name}
                                     onChange={(e) => setName(e.target.value)}
                                     className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                                     placeholder="E.g. Acme Corp"
@@ -108,7 +108,7 @@ const Login = () => {
                         <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
                         <input
                             type="text"
-                            value={username}
+                            // value={username}
                             onChange={(e) => setUsername(e.target.value)}
                             className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                             placeholder="Enter your username"
@@ -119,7 +119,7 @@ const Login = () => {
                         <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
                         <input
                             type="password"
-                            value={password}
+                            // value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             className="w-full px-4 py-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition"
                             placeholder="••••••••"

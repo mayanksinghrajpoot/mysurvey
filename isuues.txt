@@ -1,0 +1,4 @@
+do we need to apply the bid system, 
+if direct data input is there then no need for bid system
+roles is clear we have to apply dual verification Strategy and it will follow bottom up approach 
+important to analyse the project management thing , each project have such things like the rfqs

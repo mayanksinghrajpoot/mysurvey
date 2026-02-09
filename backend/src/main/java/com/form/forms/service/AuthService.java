@@ -22,10 +22,13 @@ public class AuthService {
 
     private final UserRepository userRepository;
     private final JwtTokenProvider tokenProvider;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
-    public AuthService(UserRepository userRepository, JwtTokenProvider tokenProvider) {
+    public AuthService(UserRepository userRepository, JwtTokenProvider tokenProvider,
+            org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
         this.userRepository = userRepository;
         this.tokenProvider = tokenProvider;
+        this.passwordEncoder = passwordEncoder;
     }
 
     public String login(String username, String password) {
@@ -36,8 +39,7 @@ public class AuthService {
 
         if (userOpt.isPresent()) {
             User user = userOpt.get();
-            // TODO: Use PasswordEncoder in production
-            if (password.equals(user.getPassword())) {
+            if (passwordEncoder.matches(password, user.getPassword())) {
                 Authentication authentication = new UsernamePasswordAuthenticationToken(username, password);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
 
@@ -72,7 +74,7 @@ public class AuthService {
         User user = new User();
         user.setName(name);
         user.setUsername(username);
-        user.setPassword(password); // Should encode
+        user.setPassword(passwordEncoder.encode(password)); // Encrypt password
         user.setRole(role);
         user.setParentId(parentId);
 
@@ -141,7 +143,7 @@ public class AuthService {
         User user = new User();
         user.setName(name);
         user.setUsername(username);
-        user.setPassword(password);
+        user.setPassword(passwordEncoder.encode(password));
         user.setRole(Role.SUPER_ADMIN);
         return userRepository.save(user);
     }
