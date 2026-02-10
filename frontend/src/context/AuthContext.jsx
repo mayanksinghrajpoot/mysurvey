@@ -48,7 +48,9 @@ export const AuthProvider = ({ children }) => {
     const logout = () => {
         localStorage.removeItem('token');
         localStorage.removeItem('organizationId');
+        localStorage.removeItem('impersonateTenantId'); // Clear impersonation if active
         setUser(null);
+        window.location.href = '/login'; // Redirect to login page
     };
 
     return (
