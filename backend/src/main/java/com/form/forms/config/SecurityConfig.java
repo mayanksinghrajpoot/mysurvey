@@ -41,6 +41,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/surveys/submit/**").permitAll()
                         .requestMatchers("/api/surveys/public/**").permitAll()
                         .requestMatchers("/error").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated());
 
         // Add our custom filters

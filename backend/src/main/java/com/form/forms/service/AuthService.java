@@ -36,6 +36,7 @@ public class AuthService {
         password = password.trim();
 
         Optional<User> userOpt = userRepository.findByUsername(username);
+        System.out.println("Login attempt for: " + username + ", Found: " + userOpt.isPresent());
 
         if (userOpt.isPresent()) {
             User user = userOpt.get();

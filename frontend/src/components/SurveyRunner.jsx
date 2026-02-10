@@ -77,10 +77,44 @@ const SurveyRunner = () => {
     );
 
     return (
-        <div className="min-h-screen bg-slate-50 pt-8 pb-12">
-            <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 shadow-2xl rounded-xl bg-white overflow-hidden p-6 py-10">
-                <Survey model={surveyModel} />
-            </div>
+        <div className="min-h-screen bg-slate-50 flex flex-col">
+            {/* Simple Header */}
+            <nav className="bg-white shadow-sm border-b border-slate-200">
+                <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex justify-between h-16">
+                        <div className="flex items-center">
+                            <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-purple-600">
+                                FormsFlow
+                            </span>
+                        </div>
+                        {/* Only show Back button if we have a history/context (e.g. if we are an admin previewing) 
+                            For now, we can check if user is logged in via accessing localStorage or context if we wrap this. 
+                            But SurveyRunner might be public. Let's try to check token safely. */}
+                        <div className="flex items-center">
+                            {localStorage.getItem('token') && (
+                                <button
+                                    onClick={() => window.location.href = '/dashboard'}
+                                    className="text-sm font-medium text-slate-600 hover:text-slate-900 transition"
+                                >
+                                    Back to Dashboard
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </nav>
+
+            <main className="flex-1 py-8">
+                <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="bg-white shadow-xl rounded-xl overflow-hidden border border-slate-100">
+                        {/* Survey Component */}
+                        <Survey model={surveyModel} />
+                    </div>
+                    <div className="mt-6 text-center text-xs text-slate-400">
+                        Powered by FormsFlow
+                    </div>
+                </div>
+            </main>
         </div>
     );
 };

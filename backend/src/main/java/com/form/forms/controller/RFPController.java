@@ -25,6 +25,15 @@ public class RFPController {
         }
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<?> updateRFP(@PathVariable String id, @RequestBody RFP rfp) {
+        try {
+            return ResponseEntity.ok(rfpService.updateRFP(id, rfp));
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
     @GetMapping("/rfq/{rfqId}")
     public List<RFP> getRfpsByRfq(@PathVariable String rfqId) {
         return rfpService.getRFPsByRFQ(rfqId);

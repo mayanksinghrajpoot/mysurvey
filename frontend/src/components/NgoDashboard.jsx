@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { toast } from 'react-toastify';
+import { flattenComponents } from '../lib/utils';
 import DynamicRequestForm from './DynamicRequestForm';
 
 const NgoDashboard = () => {
@@ -71,8 +72,126 @@ const NgoDashboard = () => {
         }
     };
 
+    // Edit State
+    const [editingRfq, setEditingRfq] = useState(null);
+    const [editingRfp, setEditingRfp] = useState(null);
+
     // --- RFQ Logic ---
+    const handleDynamicRFQSubmit = async (formData) => {
+        try {
+            // Extract budget, title, description using Schema Labels (since keys are UUIDs)
+            let estimatedTotal = 0;
+            let extractedTitle = null;
+            let extractedDetails = null;
+
+            const schemaComponents = rfqSchema?.fields || rfqSchema?.components;
+
+            if (schemaComponents) {
+                const flatComponents = flattenComponents(schemaComponents);
+                console.log("DEBUG: Flat Components:", flatComponents.map(c => ({ key: c.id || c.key, label: c.label, type: c.type })));
+                console.log("DEBUG: FormData Keys:", Object.keys(formData));
+
+                // Helper to find field by label or key/id
+                const findField = (terms) => flatComponents.find(c => {
+                    const labelMatch = c.label && terms.some(t => c.label.toLowerCase().includes(t));
+                    const keyMatch = (c.key && terms.some(t => c.key.toLowerCase().includes(t))) ||
+                        (c.id && terms.some(t => c.id.toLowerCase().includes(t)));
+                    return labelMatch || keyMatch;
+                });
+
+                // Helper to get value from formData using key or id
+                const getValue = (field) => {
+                    if (!field) return null;
+                    return formData[field.key] || formData[field.id];
+                };
+
+                // Find Amount Field
+                const amountField = findField(['amount', 'budget', 'total', 'cost', 'price', 'value', 'estimate']);
+                console.log("DEBUG: Found Amount Field:", amountField);
+
+                const amountVal = getValue(amountField);
+                if (amountVal) {
+                    estimatedTotal = parseFloat(amountVal);
+                }
+
+                // Find Title Field
+                const titleField = findField(['title', 'project name', 'subject', 'heading', 'objective', 'proposal name']);
+                console.log("DEBUG: Found Title Field:", titleField);
+
+                const titleVal = getValue(titleField);
+                if (titleVal) {
+                    extractedTitle = titleVal;
+                }
+
+                // Find Details/Description Field
+                const detailsField = findField(['detail', 'description', 'scope', 'summary', 'background', 'context']);
+                console.log("DEBUG: Found Details Field:", detailsField);
+
+                const detailsVal = getValue(detailsField);
+                if (detailsVal) {
+                    extractedDetails = detailsVal;
+                }
+            } else {
+                console.warn("DEBUG: No schema components or fields found", rfqSchema);
+            }
+
+            // ... (fallback and backend calls same as before)
+            // ...
+
+            // Fallback: Check for raw keys if schema lookup failed (legacy support)
+            if (estimatedTotal <= 0) {
+                for (const key in formData) {
+                    if (key.toLowerCase().includes('amount') || key.toLowerCase().includes('budget')) {
+                        const val = parseFloat(formData[key]);
+                        if (!isNaN(val)) estimatedTotal = val;
+                    }
+                }
+            }
+
+            // Backend requires a budget breakdown OR a total budget > 0.
+            if (estimatedTotal <= 0) estimatedTotal = 1; // Default to 1 to bypass validation
+
+            const finalTitle = extractedTitle || formData.title || formData.Title || (editingRfq ? editingRfq.title : rfqForm.title) || "Untitled Budget Request";
+            const finalDetails = extractedDetails || formData.description || formData.Details || (editingRfq ? editingRfq.details : rfqForm.details) || "Submitted via Dynamic Form";
+
+            // Start Edit Logic
+            if (editingRfq) {
+                // ...
+                await api.post('/rfqs', {
+                    projectId: editingRfq.projectId, // Use original project
+                    ngoId: user.id,
+                    title: finalTitle,
+                    details: finalDetails,
+                    budgetBreakdown: [],
+                    totalBudget: estimatedTotal,
+                    customData: formData
+                });
+                toast.success("RFQ Resubmitted! Waiting for PM Approval.");
+                setEditingRfq(null);
+            } else {
+                // ...
+                await api.post('/rfqs', {
+                    projectId: showCreateRfq,
+                    ngoId: user.id,
+                    title: finalTitle,
+                    details: finalDetails,
+                    budgetBreakdown: [],
+                    totalBudget: estimatedTotal,
+                    customData: formData
+                });
+                toast.success("RFQ Created! Waiting for PM Approval.");
+            }
+            setShowCreateRfq(null);
+            setRfqForm({ title: '', details: '', budgetBreakdown: [{ financialYear: '', amount: '' }], customData: {} });
+            fetchAssignedSurveys();
+        } catch (err) {
+            console.error(err);
+            toast.error(err.response?.data?.error || "Failed to create RFQ");
+        }
+    };
+
     const handleCreateRFQ = async (projectId) => {
+        // ... (existing implementation)
         try {
             // Clean and validate breakdown
             const validBreakdown = rfqForm.budgetBreakdown
@@ -91,7 +210,6 @@ const NgoDashboard = () => {
                 details: rfqForm.details,
                 budgetBreakdown: validBreakdown,
                 customData: rfqForm.customData
-                // totalBudget is calculated by backend
             });
             toast.success("RFQ Created! Waiting for PM Approval.");
             setShowCreateRfq(null);
@@ -104,11 +222,93 @@ const NgoDashboard = () => {
 
     const handleViewRfq = async (rfq) => {
         setSelectedRfq(rfq);
-        // Optimize: verify if allRfps are fresh, currently assuming fetchAssignedSurveys keeps them fresh
         setRfps(allRfps.filter(r => r.rfqId === rfq.id));
     };
 
     // --- RFP Logic ---
+    const handleDynamicRFPSubmit = async (formData) => {
+        try {
+            // Try to find amount and title in formData from Schema
+            let amount = 0;
+            let extractedTitle = null;
+
+            const schemaComponents = rfpSchema?.fields || rfpSchema?.components;
+
+            if (schemaComponents) {
+                const flatComponents = flattenComponents(schemaComponents);
+                console.log("DEBUG RFP: Flat Components:", flatComponents.map(c => ({ key: c.id || c.key, label: c.label, type: c.type })));
+                console.log("DEBUG RFP: FormData Keys:", Object.keys(formData));
+
+                // Helper to find field by label or key/id
+                const findField = (terms) => flatComponents.find(c => {
+                    const labelMatch = c.label && terms.some(t => c.label.toLowerCase().includes(t));
+                    const keyMatch = (c.key && terms.some(t => c.key.toLowerCase().includes(t))) ||
+                        (c.id && terms.some(t => c.id.toLowerCase().includes(t)));
+                    return labelMatch || keyMatch;
+                });
+
+                // Helper to get value from formData using key or id
+                const getValue = (field) => {
+                    if (!field) return null;
+                    return formData[field.key] || formData[field.id];
+                };
+
+                const amountField = findField(['amount', 'total', 'cost', 'value', 'price', 'budget']);
+                console.log("DEBUG RFP: Found Amount Field:", amountField);
+
+                const amountVal = getValue(amountField);
+                if (amountVal) {
+                    amount = parseFloat(amountVal);
+                }
+
+                // Find Title Field
+                const titleField = findField(['title', 'milestone', 'name', 'stage', 'phase', 'objective']);
+                console.log("DEBUG RFP: Found Title Field:", titleField);
+
+                const titleVal = getValue(titleField);
+                if (titleVal) {
+                    extractedTitle = titleVal;
+                }
+            } else {
+                console.warn("DEBUG RFP: No schema components or fields found", rfpSchema);
+            }
+
+            if (amount <= 0 && formData.amount) amount = parseFloat(formData.amount);
+            if (amount <= 0 && formData.Amount) amount = parseFloat(formData.Amount);
+
+            const finalTitle = extractedTitle || formData.title || formData.Title || (editingRfp ? editingRfp.title : rfpForm.title) || "Untitled Milestone Request";
+
+            if (editingRfp) {
+                // Update Logic (PUT request to update existing)
+                await api.put(`/rfps/${editingRfp.id}`, {
+                    rfqId: editingRfp.rfqId,
+                    ngoId: user.id,
+                    title: finalTitle,
+                    amount: amount,
+                    customData: formData
+                });
+                toast.success("Milestone Request Updated! Waiting for PM Approval.");
+                setEditingRfp(null);
+            } else {
+                // Create New
+                await api.post('/rfps', {
+                    rfqId: selectedRfq.id,
+                    ngoId: user.id,
+                    title: finalTitle,
+                    amount: amount,
+                    customData: formData
+                });
+                toast.success("Milestone Request Submitted! Waiting for PM Approval.");
+            }
+            setShowCreateRfp(false);
+            setRfpForm({ title: '', amount: '', customData: {} });
+            fetchAssignedSurveys();
+        } catch (err) {
+            console.error(err);
+            toast.error(err.response?.data?.error || "Failed to submit Milestone Request");
+        }
+    };
+
     const handleCreateRFP = async () => {
         try {
             await api.post('/rfps', {
@@ -293,11 +493,14 @@ const NgoDashboard = () => {
                                         setShowCreateRfp(true);
                                         // Fetch Schema
                                         const survey = surveys.find(s => s.projectId === selectedRfq.projectId);
-                                        if (survey && survey.tenantId) {
+                                        if (survey && survey.organizationId) {
                                             try {
-                                                const res = await api.get(`/schemas?tenantId=${survey.tenantId}&type=RFP`);
+                                                const res = await api.get(`/schemas?tenantId=${survey.organizationId}&type=RFP`);
                                                 if (res.data && res.data.schemaJson) {
-                                                    setRfpSchema(res.data.schemaJson);
+                                                    const parsed = typeof res.data.schemaJson === 'string'
+                                                        ? JSON.parse(res.data.schemaJson)
+                                                        : res.data.schemaJson;
+                                                    setRfpSchema(parsed);
                                                 } else {
                                                     setRfpSchema(null);
                                                 }
@@ -350,7 +553,49 @@ const NgoDashboard = () => {
                                         <div>
                                             {rfq ? (
                                                 <div className="text-right">
-                                                    <div className="mb-2">{renderRfqStatus(rfq.status)}</div>
+                                                    <div className="mb-2">
+                                                        {/* Status Badge */}
+                                                        <span className={`px-2 py-1 rounded text-xs font-bold
+                                                        ${rfq.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                                                                rfq.status === 'REJECTED' ? 'bg-red-100 text-red-700' :
+                                                                    rfq.status.includes('PENDING') ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100'
+                                                            }`}>
+                                                            {rfq.status.replace('_', ' ')}
+                                                        </span>
+
+                                                        {/* Edit Button for Rejected RFQs */}
+                                                        {rfq.status === 'REJECTED' && (
+                                                            <button
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    setEditingRfq(rfq);
+                                                                    setRfqForm({ ...rfqForm, customData: rfq.customData || {} });
+                                                                    setShowCreateRfq(rfq.projectId); // Open Modal
+
+                                                                    // Fetch Schema for Edit
+                                                                    const survey = surveys.find(s => s.projectId === rfq.projectId);
+                                                                    if (survey && survey.organizationId) {
+                                                                        try {
+                                                                            const res = await api.get(`/schemas?tenantId=${survey.organizationId}&type=RFQ`);
+                                                                            if (res.data && res.data.schemaJson) {
+                                                                                const parsed = typeof res.data.schemaJson === 'string'
+                                                                                    ? JSON.parse(res.data.schemaJson)
+                                                                                    : res.data.schemaJson;
+                                                                                setRfqSchema(parsed);
+                                                                            } else {
+                                                                                setRfqSchema(null);
+                                                                            }
+                                                                        } catch (e) {
+                                                                            setRfqSchema(null);
+                                                                        }
+                                                                    }
+                                                                }}
+                                                                className="ml-2 text-xs text-blue-600 hover:underline"
+                                                            >
+                                                                Edit & Resubmit
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                     <button onClick={() => handleViewRfq(rfq)} className="text-blue-600 text-sm hover:underline">View Budget Details</button>
                                                 </div>
                                             ) : (
@@ -359,11 +604,14 @@ const NgoDashboard = () => {
                                                         setShowCreateRfq(pid);
                                                         // Fetch Schema
                                                         const survey = surveys.find(s => s.projectId === pid);
-                                                        if (survey && survey.tenantId) {
+                                                        if (survey && survey.organizationId) {
                                                             try {
-                                                                const res = await api.get(`/schemas?tenantId=${survey.tenantId}&type=RFQ`);
+                                                                const res = await api.get(`/schemas?tenantId=${survey.organizationId}&type=RFQ`);
                                                                 if (res.data && res.data.schemaJson) {
-                                                                    setRfqSchema(res.data.schemaJson);
+                                                                    const parsed = typeof res.data.schemaJson === 'string'
+                                                                        ? JSON.parse(res.data.schemaJson)
+                                                                        : res.data.schemaJson;
+                                                                    setRfqSchema(parsed);
                                                                 } else {
                                                                     setRfqSchema(null);
                                                                 }
@@ -512,7 +760,58 @@ const NgoDashboard = () => {
                                                 <tr key={r.id}>
                                                     <td className="px-6 py-4 font-medium text-slate-900">{r.title}</td>
                                                     <td className="px-6 py-4 text-slate-600">₹{r.amount?.toLocaleString()}</td>
-                                                    <td className="px-6 py-4">{renderRfqStatus(r.status)}</td>
+                                                    <td className="px-6 py-4">
+                                                        <div key={r.id} className="flex justify-between items-center bg-white p-3 rounded border border-slate-100 shadow-sm">
+                                                            <div>
+                                                                <div className="font-medium text-slate-800">{r.title}</div>
+                                                                <div className="text-sm text-slate-500">₹{r.amount?.toLocaleString()} - <span className={
+                                                                    r.status === 'APPROVED' ? 'text-green-600' :
+                                                                        r.status === 'REJECTED' ? 'text-red-600' : 'text-yellow-600'
+                                                                }>{r.status}</span>
+                                                                    {r.status === 'REJECTED' && (
+                                                                        <button
+                                                                            onClick={async () => {
+                                                                                setEditingRfp(r);
+                                                                                // Get Parent RFQ to find Project ID -> Survey -> Org ID
+                                                                                const distinctRfq = rfqMap[r.rfqId] || selectedRfq;
+                                                                                // NOTE: r.rfqId might be missing in some views if flattened, but usually present.
+                                                                                // If not, we rely on 'selectedRfq' from context or rfqMap.
+
+                                                                                if (distinctRfq) {
+                                                                                    setSelectedRfq(distinctRfq);
+                                                                                    setShowCreateRfp(true);
+
+                                                                                    // Fetch Schema
+                                                                                    const survey = surveys.find(s => s.projectId === distinctRfq.projectId);
+                                                                                    if (survey && survey.organizationId) {
+                                                                                        try {
+                                                                                            const res = await api.get(`/schemas?tenantId=${survey.organizationId}&type=RFP`);
+                                                                                            if (res.data && res.data.schemaJson) {
+                                                                                                const parsed = typeof res.data.schemaJson === 'string'
+                                                                                                    ? JSON.parse(res.data.schemaJson)
+                                                                                                    : res.data.schemaJson;
+                                                                                                setRfpSchema(parsed);
+                                                                                            } else {
+                                                                                                setRfpSchema(null);
+                                                                                            }
+                                                                                        } catch (e) {
+                                                                                            setRfpSchema(null);
+                                                                                        }
+                                                                                    }
+                                                                                } else {
+                                                                                    // Fallback if no RFQ context
+                                                                                    setShowCreateRfp(true);
+                                                                                }
+                                                                            }}
+                                                                            className="ml-2 text-xs text-blue-600 hover:underline"
+                                                                        >
+                                                                            Edit
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </td>
                                                     <td className="px-6 py-4 text-sm text-slate-500">{r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '-'}</td>
                                                 </tr>
                                             ))}
@@ -557,12 +856,20 @@ const NgoDashboard = () => {
                 }
 
                 {/* MODALS */}
-                {/* RFQ Modal */}
-                {
-                    showCreateRfq && (
-                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                            <div className="bg-white p-8 rounded-xl max-w-md w-full shadow-2xl animate-fade-in-up max-h-[90vh] overflow-y-auto">
-                                <h3 className="text-xl font-bold mb-4">Create Budget Request (RFQ)</h3>
+                {/* Create RFQ Modal (Dynamic) */}
+                {showCreateRfq && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full p-6 animate-fade-in-up max-h-[90vh] overflow-y-auto">
+                            <h2 className="text-xl font-bold mb-4">{editingRfq ? "Edit Budget Request" : "New Budget Request"}</h2>
+
+                            {rfqSchema ? (
+                                <DynamicRequestForm
+                                    schemaJson={rfqSchema}
+                                    initialData={editingRfq ? editingRfq.customData : {}}
+                                    onSubmit={handleDynamicRFQSubmit}
+                                    onCancel={() => { setShowCreateRfq(null); setEditingRfq(null); }}
+                                />
+                            ) : (
                                 <div className="space-y-4">
                                     <div className="space-y-1">
                                         <label className="text-xs font-bold text-slate-500 uppercase">Scope Title</label>
@@ -618,35 +925,29 @@ const NgoDashboard = () => {
                                         </div>
                                     </div>
 
-                                    {/* Dynamic Schema Form */}
-                                    {rfqSchema && (
-                                        <div className="border-t border-slate-100 pt-4 mt-4">
-                                            <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Additional Details</label>
-                                            <DynamicRequestForm
-                                                schemaJson={rfqSchema}
-                                                initialData={rfqForm.customData}
-                                                onSubmit={(data) => setRfqForm(prev => ({ ...prev, customData: data }))}
-                                                onComplete={(data) => setRfqForm(prev => ({ ...prev, customData: data }))}
-                                            />
-                                        </div>
-                                    )}
-
                                     <div className="flex justify-end space-x-3 mt-4">
                                         <button onClick={() => setShowCreateRfq(null)} className="text-slate-500">Cancel</button>
                                         <button onClick={() => handleCreateRFQ(showCreateRfq)} className="bg-blue-600 text-white px-4 py-2 rounded">Submit Request</button>
                                     </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
-                    )
-                }
+                    </div>
+                )}
 
-                {/* RFP Modal */}
-                {
-                    showCreateRfp && (
-                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                            <div className="bg-white p-8 rounded-xl max-w-md w-full shadow-2xl animate-fade-in-up">
-                                <h3 className="text-xl font-bold mb-4">Request Fund Release (RFP)</h3>
+                {/* Create RFP Modal */}
+                {showCreateRfp && (
+                    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+                        <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 animate-fade-in-up">
+                            <h2 className="text-xl font-bold mb-4">{editingRfp ? "Edit Milestone Request" : "New Milestone Request"}</h2>
+                            {rfpSchema ? (
+                                <DynamicRequestForm
+                                    schemaJson={rfpSchema}
+                                    initialData={editingRfp ? editingRfp.customData : {}}
+                                    onSubmit={handleDynamicRFPSubmit}
+                                    onCancel={() => { setShowCreateRfp(false); setEditingRfp(null); }}
+                                />
+                            ) : (
                                 <div className="space-y-4">
                                     <input className="w-full border p-2 rounded" placeholder="Milestone Title" value={rfpForm.title} onChange={e => setRfpForm({ ...rfpForm, title: e.target.value })} />
                                     <input type="number" className="w-full border p-2 rounded" placeholder="Amount (₹)" value={rfpForm.amount} onChange={e => setRfpForm({ ...rfpForm, amount: e.target.value })} />
@@ -655,12 +956,11 @@ const NgoDashboard = () => {
                                     {/* Dynamic Schema Form */}
                                     {rfpSchema && (
                                         <div className="border-t border-slate-100 pt-4 mt-4">
-                                            <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Additional Details</label>
+                                            {/* <label className="text-xs font-bold text-slate-500 uppercase mb-2 block">Additional Details</label> */}
                                             <DynamicRequestForm
                                                 schemaJson={rfpSchema}
                                                 initialData={rfpForm.customData}
-                                                onSubmit={(data) => setRfpForm(prev => ({ ...prev, customData: data }))}
-                                                onComplete={(data) => setRfpForm(prev => ({ ...prev, customData: data }))}
+                                                onSubmit={(data) => handleDynamicRFPSubmit(data)}
                                             />
                                         </div>
                                     )}
@@ -669,10 +969,10 @@ const NgoDashboard = () => {
                                         <button onClick={handleCreateRFP} className="bg-green-600 text-white px-4 py-2 rounded">Submit</button>
                                     </div>
                                 </div>
-                            </div>
+                            )}
                         </div>
-                    )
-                }
+                    </div>
+                )}
 
                 {/* Expense Modal */}
                 {

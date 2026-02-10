@@ -142,4 +142,41 @@ public class RFPService {
                 .filter(r -> r.getStatus() == RFPStatus.PENDING_ADMIN)
                 .collect(Collectors.toList());
     }
+
+    public RFP updateRFP(String id, RFP updatedRfp) {
+        RFP existing = rfpRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("RFP not found"));
+
+        if (existing.getStatus() != RFPStatus.REJECTED) {
+            throw new RuntimeException("Only REJECTED RFPs can be modified and resubmitted.");
+        }
+
+        // Validate Parent RFQ again just in case
+        RFQ parentRFQ = rfqRepository.findById(existing.getRfqId())
+                .orElseThrow(() -> new RuntimeException("Parent RFQ not found"));
+        if (parentRFQ.getStatus() != RFQStatus.APPROVED) {
+            throw new RuntimeException("Cannot resubmit RFP. Parent RFQ is not APPROVED.");
+        }
+
+        // Recalculate Budget validation excluding this RFP's old amount but including
+        // new
+        List<RFP> existingRFPs = rfpRepository.findByRfqId(existing.getRfqId());
+        double usedBudget = existingRFPs.stream()
+                .filter(r -> !r.getId().equals(id) && r.getStatus() != RFPStatus.REJECTED)
+                .mapToDouble(RFP::getAmount)
+                .sum();
+
+        if (usedBudget + updatedRfp.getAmount() > parentRFQ.getTotalBudget()) {
+            throw new RuntimeException("Updated RFP amount exceeds remaining RFQ budget.");
+        }
+
+        existing.setTitle(updatedRfp.getTitle());
+        existing.setAmount(updatedRfp.getAmount());
+        existing.setCustomData(updatedRfp.getCustomData());
+        existing.setStatus(RFPStatus.PENDING_PM); // Reset to Pending
+        existing.setRejectionReason(null); // Clear rejection
+        existing.setCreatedAt(new Date()); // Refresh date? Or keep original? Let's refresh to bump it up.
+
+        return rfpRepository.save(existing);
+    }
 }

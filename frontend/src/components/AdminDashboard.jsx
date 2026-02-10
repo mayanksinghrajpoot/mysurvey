@@ -8,6 +8,7 @@ import ProjectList from './views/ProjectList';
 import ProjectDetailView from './views/ProjectDetailView';
 import PromptModal from './PromptModal';
 import ConfirmationModal from './ConfirmationModal';
+import TemplateBuilder from './TemplateBuilder';
 import { toast } from 'react-toastify';
 
 const AdminDashboard = () => {

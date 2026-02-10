@@ -4,6 +4,7 @@ import PMDetailView from './views/PMDetailView';
 import api from '../services/api';
 import PromptModal from './PromptModal';
 import { toast } from 'react-toastify';
+import SchemaDataViewer from './SchemaDataViewer';
 
 const ProjectManagerDashboard = () => {
     const { user, logout } = useAuth();
@@ -59,6 +60,63 @@ const ProjectManagerDashboard = () => {
     };
 
     const [viewDetailsModal, setViewDetailsModal] = useState(null);
+    const [viewSchema, setViewSchema] = useState(null); // Schema for the currently viewed RFQ/RFP
+
+    // Fetch schema when viewing details
+    useEffect(() => {
+        const fetchSchemaForDetails = async () => {
+            if (!viewDetailsModal) {
+                setViewSchema(null);
+                return;
+            }
+
+            try {
+                // 1. We need organizationId. We have projectId in RFQ.
+                // If it's RFP, we have rfqId -> then get RFQ -> then get Project.
+                // Let's assume viewDetailsModal has projectId (RFQ) or we need to fetch it (RFP).
+
+                let projectId = viewDetailsModal.projectId;
+                let type = 'RFQ';
+
+                if (viewDetailsModal.rfqId) {
+                    type = 'RFP';
+                    // We might need to fetch the RFQ to get the projectId if not present in RFP object
+                    // But let's see if we can get orgId differently or if RFP has projectId? 
+                    // Model check: RFP does NOT have projectId. It has rfqId.
+                    // So we need to fetch RFQ first? Or maybe we can cheat?
+                    // Actually, fetching the survey by project is the standard way.
+                    // Let's try to get survey by rfqId? No endpoint.
+
+                    // Optimization: In 'pendingRfps', we can't easily get projectId without fetching RFQ.
+                    // However, we can try to fetch the schema if we know the tenant? 
+                    // PM doesn't know tenant ID directly? 
+
+                    // Let's try to fetch the RFQ first if it's an RFP
+                    const rfqRes = await api.get(`/rfqs/${viewDetailsModal.rfqId}`);
+                    projectId = rfqRes.data.projectId;
+                }
+
+                if (projectId) {
+                    // Fetch survey to get organizationId
+                    const surveysRes = await api.get('/surveys');
+                    const survey = surveysRes.data.find(s => s.projectId === projectId);
+
+                    if (survey && survey.organizationId) {
+                        const schemaRes = await api.get(`/schemas?tenantId=${survey.organizationId}&type=${type}`);
+                        if (schemaRes.data && schemaRes.data.schemaJson) {
+                            const parsed = typeof schemaRes.data.schemaJson === 'string'
+                                ? JSON.parse(schemaRes.data.schemaJson)
+                                : schemaRes.data.schemaJson;
+                            setViewSchema(parsed);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to fetch schema for labels", e);
+            }
+        };
+        fetchSchemaForDetails();
+    }, [viewDetailsModal]);
 
     // Schema Editor State
     const [approvalModalOpen, setApprovalModalOpen] = useState(false);
@@ -301,23 +359,7 @@ const ProjectManagerDashboard = () => {
                                             </div>
 
                                             {/* Custom Data */}
-                                            {viewDetailsModal.customData && Object.keys(viewDetailsModal.customData).length > 0 ? (
-                                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-                                                    <h4 className="text-sm font-bold text-slate-700 uppercase mb-2">Additional Information</h4>
-                                                    <div className="space-y-2">
-                                                        {Object.entries(viewDetailsModal.customData).map(([key, value]) => (
-                                                            <div key={key} className="flex flex-col border-b border-slate-200 last:border-0 pb-2 last:pb-0">
-                                                                <span className="text-xs text-slate-500 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                                                                <span className="text-sm text-slate-800 font-medium">
-                                                                    {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                                                                </span>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <p className="text-sm text-slate-400 italic">No additional custom details provided.</p>
-                                            )}
+                                            <SchemaDataViewer data={viewDetailsModal.customData} schema={viewSchema} />
 
                                             <div className="mt-6 flex justify-end">
                                                 <button onClick={() => setViewDetailsModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 rounded hover:bg-slate-200">Close</button>
@@ -391,9 +433,10 @@ const ProjectManagerDashboard = () => {
                             placeholder="Reason for rejection..."
                         />
                     </div>
-                )}
-            </main>
-        </div>
+                )
+                }
+            </main >
+        </div >
     );
 };
 

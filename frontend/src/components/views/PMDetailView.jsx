@@ -4,6 +4,7 @@ import api from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { toast } from 'react-toastify';
 import ConfirmationModal from '../ConfirmationModal';
+import SchemaDataViewer from '../SchemaDataViewer';
 
 // Level 3: Survey List (Table) -> Survey Detail (Workbench)
 const PMDetailView = ({ pmId, pmName, isOwnView }) => {
@@ -145,6 +146,51 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
 
     // Details Modal
     const [viewDetailsModal, setViewDetailsModal] = useState(null);
+    const [viewSchema, setViewSchema] = useState(null);
+
+    useEffect(() => {
+        const fetchSchema = async () => {
+            if (!viewDetailsModal) {
+                setViewSchema(null);
+                return;
+            }
+
+            try {
+                // Determine if it's RFP or Utilization
+                // RFP has rfqId. Utilization has rfpId.
+                if (viewDetailsModal.rfqId) {
+                    // It's an RFP (Milestone)
+                    // Need Global RFP Schema for Tenant
+                    const rfq = rfqs.find(r => r.id === viewDetailsModal.rfqId);
+                    if (rfq) {
+                        const survey = surveys.find(s => s.projectId === rfq.projectId);
+                        if (survey && survey.organizationId) {
+                            const res = await api.get(`/schemas?tenantId=${survey.organizationId}&type=RFP`);
+                            if (res.data && res.data.schemaJson) {
+                                setViewSchema(typeof res.data.schemaJson === 'string'
+                                    ? JSON.parse(res.data.schemaJson)
+                                    : res.data.schemaJson);
+                            }
+                        }
+                    }
+                } else if (viewDetailsModal.rfpId) {
+                    // It's a Utilization (Expense)
+                    // Derived from RFP -> RFQ -> expenseFormat
+                    const rfp = rfps.find(r => r.id === viewDetailsModal.rfpId);
+                    if (rfp) {
+                        const rfq = rfqs.find(r => r.id === rfp.rfqId);
+                        if (rfq && rfq.expenseFormat) {
+                            // expenseFormat is likely an array of fields
+                            setViewSchema({ components: rfq.expenseFormat });
+                        }
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to load schema for details", err);
+            }
+        };
+        fetchSchema();
+    }, [viewDetailsModal, rfqs, rfps, surveys]);
 
     // --- Operations Logic ---
     const handleVerifyExpense = async (id) => {
@@ -602,23 +648,7 @@ const PMDetailView = ({ pmId, pmName, isOwnView }) => {
                         </div>
 
                         {/* Custom Data */}
-                        {viewDetailsModal.customData && Object.keys(viewDetailsModal.customData).length > 0 ? (
-                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-                                <h4 className="text-sm font-bold text-slate-700 uppercase mb-2">Additional Information</h4>
-                                <div className="space-y-2">
-                                    {Object.entries(viewDetailsModal.customData).map(([key, value]) => (
-                                        <div key={key} className="flex flex-col border-b border-slate-200 last:border-0 pb-2 last:pb-0">
-                                            <span className="text-xs text-slate-500 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}</span>
-                                            <span className="text-sm text-slate-800 font-medium">
-                                                {typeof value === 'object' ? JSON.stringify(value) : String(value)}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ) : (
-                            <p className="text-sm text-slate-400 italic">No additional custom details provided.</p>
-                        )}
+                        <SchemaDataViewer data={viewDetailsModal.customData} schema={viewSchema} />
 
                         <div className="mt-6 flex justify-end">
                             <button onClick={() => setViewDetailsModal(null)} className="px-4 py-2 bg-slate-100 text-slate-700 rounded hover:bg-slate-200">Close</button>

@@ -101,11 +101,8 @@ const SurveyCreatorWidget = () => {
                 await api.post('/surveys', payload);
                 callback(saveNo, true);
 
-                if (projectId) {
-                    navigate(`/projects/${projectId}`);
-                } else {
-                    navigate('/dashboard');
-                }
+                // Redirect to Role Dashboard instead of Project Details
+                navigate('/dashboard');
             } catch (err) {
                 console.error(err);
                 callback(saveNo, false);

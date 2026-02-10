@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.http.ResponseEntity;
 import java.util.Map;
 
 @RestController
@@ -36,9 +37,10 @@ public class RequestSchemaController {
     }
 
     @GetMapping
-    public RequestSchema getSchema(@RequestParam String tenantId, @RequestParam String type) {
+    public ResponseEntity<RequestSchema> getSchema(@RequestParam String tenantId, @RequestParam String type) {
         RequestSchema.SchemaType schemaType = RequestSchema.SchemaType.valueOf(type);
         return requestSchemaService.getSchema(tenantId, schemaType)
-                .orElseThrow(() -> new RuntimeException("Schema not found"));
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.ok(null)); // Return 200 with null body if not found, or 204 No Content
     }
 }
